@@ -8,9 +8,9 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg flex flex-col lg:flex-row transition-colors duration-300">
       <Sidebar />
-      <main className="flex-1 lg:ml-[220px] pb-20 lg:pb-0 min-w-0 flex flex-col min-h-screen">
+      <main className="flex-1 lg:ml-[240px] pb-20 lg:pb-0 min-w-0 flex flex-col min-h-screen">
         <Topbar />
-        <div className="flex-1">
+        <div className="flex-1 w-full max-w-[1400px] mx-auto">
           <Outlet />
         </div>
       </main>

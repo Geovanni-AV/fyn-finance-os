@@ -81,15 +81,17 @@ export default function Deudas() {
   )
 
   return (
-    <div className="p-4 lg:p-6 lg:max-w-7xl mx-auto space-y-8 animate-fade-in-up">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-light-text dark:text-dark-text tracking-tight">Deudas y Créditos</h1>
-          <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-1">Monitorea y optimiza el pago de tus compromisos financieros.</p>
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Deudas y Créditos</h1>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Monitorea y optimiza el pago de tus compromisos financieros.</p>
         </div>
-        <Button variant="primary">
-          <span className="material-symbols-outlined text-lg">add</span> Agregar Deuda
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="primary">
+            <span className="material-symbols-outlined text-lg">add</span> Agregar Deuda
+          </Button>
+        </div>
       </div>
 
       {/* Primary Row: Calendar and Next Dues */}
@@ -165,7 +167,7 @@ export default function Deudas() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <KPIItem title="Deuda Total" value={formatMXN(totalDebt)} icon="account_balance" color="text-danger" bg="bg-danger/10" trend="+2.4%" />
         <KPIItem title="Intereses (mes)" value={formatMXN(totalInterestsMonthly)} icon="percent" color="text-warning" bg="bg-warning/10" />
         <KPIItem title="Capacidad de Pago" value="65%" icon="insights" color="text-success" bg="bg-success/10" />

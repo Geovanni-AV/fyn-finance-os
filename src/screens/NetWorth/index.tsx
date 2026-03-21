@@ -45,12 +45,17 @@ export default function NetWorth() {
   const liabilityAccounts = accounts.filter(a => a.isActive && a.balance < 0)
 
   return (
-    <div className="p-4 lg:p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">Net Worth</h1>
-        <button className="flex items-center gap-1.5 text-sm font-medium text-primary cursor-pointer">
-          <span className="material-symbols-outlined text-lg">download</span> Exportar
-        </button>
+    <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Net Worth</h1>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Tu patrimonio neto consolidado en tiempo real.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="ghost" className="flex items-center gap-1.5 text-sm font-medium text-primary cursor-pointer">
+            <span className="material-symbols-outlined text-lg">download</span> Exportar
+          </Button>
+        </div>
       </div>
 
       {/* Hero */}

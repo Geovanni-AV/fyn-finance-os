@@ -74,15 +74,11 @@ export default function Calendario() {
   const selectedDayEvents = events.filter(e => e.day === selectedDay)
 
   return (
-    <div className="p-4 lg:p-6 lg:max-w-7xl mx-auto space-y-6 animate-fade-in-up">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-light-text dark:text-dark-text tracking-tight flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-3xl">calendar_month</span>
-            Calendario Financiero
-          </h1>
-          <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-1 lowercase">
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Calendario Financiero</h1>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">
             <span className="capitalize">{currentDate.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</span>
           </p>
         </div>

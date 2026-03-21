@@ -115,10 +115,11 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }:
   { isOpen: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'sm' | 'md' | 'lg' }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    if (isOpen) document.addEventListener('keydown', handler)
-    return () => document.removeIndicator(handler)
-    function document.removeIndicator(handler: (e: KeyboardEvent) => void) {
-        document.removeEventListener('keydown', handler)
+    if (isOpen) {
+      document.addEventListener('keydown', handler)
+    }
+    return () => {
+      document.removeEventListener('keydown', handler)
     }
   }, [isOpen, onClose])
 

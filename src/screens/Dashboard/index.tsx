@@ -61,31 +61,33 @@ export default function Dashboard() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">
             {greeting}, {profile.name.split(' ')[0]}
           </h1>
-          <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-0.5 capitalize">{today}</p>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">{today}</p>
         </div>
-        <Link to="/alertas">
-          <button className="w-10 h-10 flex items-center justify-center rounded-btn hover:bg-light-surface dark:hover:bg-dark-surface transition-colors cursor-pointer">
-            <span className="material-symbols-outlined text-light-text-2 dark:text-dark-text-2">notifications</span>
-          </button>
-        </Link>
+        <div className="flex gap-2">
+          <Link to="/alertas">
+            <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border hover:text-primary transition-all cursor-pointer">
+              <span className="material-symbols-outlined">notifications</span>
+            </button>
+          </Link>
+        </div>
       </div>
 
       {/* Hero Card */}
       <Card className="relative overflow-hidden group" padding={false}>
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
-        <div className="p-5 pb-4 relative z-10">
-          <p className="text-xs font-semibold text-light-text-2 dark:text-dark-text-2 uppercase tracking-wider mb-1">Balance total</p>
-          <p className="text-4xl font-extrabold tabular-nums tracking-tight text-light-text dark:text-dark-text bg-clip-text text-transparent bg-gradient-to-r from-light-text to-light-text-2 dark:from-white dark:to-gray-400">
+        <div className="p-8 relative z-10">
+          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-2">Balance total</p>
+          <p className="text-5xl font-black tabular-nums tracking-tighter text-light-text dark:text-dark-text">
             {formatMXN(kpis.totalBalance)}
           </p>
           <div className="flex items-center gap-3 mt-4">
             <Badge variant={healthColor}>{healthLabel}</Badge>
-            <span className="text-xs text-light-text-2 dark:text-dark-text-2 font-medium">
+            <span className="text-[10px] text-light-text-2 dark:text-dark-text-2 font-bold uppercase tracking-wider">
               {accounts.filter(a => a.isActive).length} cuentas activas
             </span>
           </div>
@@ -267,15 +269,16 @@ export default function Dashboard() {
           <div className="w-9 h-9 bg-success/10 rounded-btn flex items-center justify-center flex-shrink-0">
             <span className="material-symbols-outlined text-success text-xl">psychology</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-success mb-1">Sugerencia de Fyn IA</p>
-            <p className="text-sm text-light-text-2 dark:text-dark-text-2">
-              Este mes ahorraste <span className="font-semibold text-light-text dark:text-dark-text">{formatMXNShort(kpis.ahorro)}</span>.
-              Transfirir <span className="font-semibold text-light-text dark:text-dark-text">{formatMXNShort(kpis.ahorro * 0.3)}</span> a
-              tu meta "{topGoal?.name}" te acercaría 2 semanas más.
-            </p>
+          <Card className="p-6 border-l-4 border-l-primary bg-primary/5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Gasto Total Mes</p>
+          <p className="text-3xl font-black text-light-text dark:text-dark-text mb-2">{formatMXN(analysisData.totalThis)}</p>
+          <div className={`flex items-center gap-1 text-xs font-bold ${analysisData.totalThis > analysisData.totalLast ? 'text-danger' : 'text-success'}`}>
+             <span className="material-symbols-outlined text-[14px]">
+               {analysisData.totalThis > analysisData.totalLast ? 'trending_up' : 'trending_down'}
+             </span>
+             {analysisData.totalLast > 0 ? (((analysisData.totalThis - analysisData.totalLast) / analysisData.totalLast) * 100).toFixed(1) : '0'}% vs mes ant.
           </div>
-          <button onClick={() => setAiBannerOpen(false)}
+        </Card>  <button onClick={() => setAiBannerOpen(false)}
             className="w-7 h-7 flex items-center justify-center rounded-btn hover:bg-light-surface dark:hover:bg-dark-surface flex-shrink-0 cursor-pointer transition-colors">
             <span className="material-symbols-outlined text-lg text-light-muted dark:text-dark-muted">close</span>
           </button>

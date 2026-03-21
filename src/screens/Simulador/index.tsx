@@ -92,10 +92,10 @@ export default function Simulador() {
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-6">
+    <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">Simulador financiero</h1>
-        <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-0.5">Proyecta tu futuro con herramientas de precisión</p>
+        <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Simulador Financiero</h1>
+        <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Proyecta tu futuro con herramientas de precisión.</p>
       </div>
 
       <Tabs tabs={tabs} activeTab={tab} onChange={(id) => setTab(id as Tab)} />

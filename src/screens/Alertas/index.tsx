@@ -28,35 +28,35 @@ export default function Alertas() {
   const unreadCount = alerts.filter(a => !a.isRead).length
 
   return (
-    <div className="p-4 lg:p-6 lg:max-w-4xl mx-auto space-y-6 animate-fade-in-up">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">Centro de Alertas</h1>
-          <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-1">
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Centro de Alertas</h1>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">
             {unreadCount > 0 ? `Tienes ${unreadCount} alertas sin leer` : 'Todo al día'}
           </p>
         </div>
         <div className="flex gap-2">
           {unreadCount > 0 && (
-            <Button variant="secondary" size="sm" onClick={markAllAlertsRead}>
+            <Button variant="secondary" onClick={markAllAlertsRead}>
               <span className="material-symbols-outlined text-lg">done_all</span> Marcar todas
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setIsConfigOpen(true)}>
+          <Button variant="ghost" className="lg:hidden" onClick={() => setIsConfigOpen(true)}>
             <span className="material-symbols-outlined text-lg">settings</span>
           </Button>
         </div>
       </div>
 
-      <div className="w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Lista de alertas */}
-        <div className="space-y-6">
+        <div className="lg:col-span-8 space-y-6">
           {todayAlerts.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-light-text-2 dark:text-dark-text-2 uppercase tracking-wide mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-primary" /> Hoy
+              <h2 className="text-xs font-black text-light-text-2 dark:text-dark-text-2 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary" /> Hoy
               </h2>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {todayAlerts.map(a => (
                   <AlertItem key={a.id} alert={a} onRead={() => markAlertRead(a.id)} />
                 ))}
@@ -66,8 +66,8 @@ export default function Alertas() {
 
           {previousAlerts.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-light-text-2 dark:text-dark-text-2 uppercase tracking-wide mb-3">Anteriores</h2>
-              <div className="space-y-3">
+              <h2 className="text-xs font-black text-light-text-2 dark:text-dark-text-2 uppercase tracking-[0.2em] mb-4">Anteriores</h2>
+              <div className="space-y-4">
                 {previousAlerts.map(a => (
                   <AlertItem key={a.id} alert={a} onRead={() => markAlertRead(a.id)} />
                 ))}
@@ -82,6 +82,46 @@ export default function Alertas() {
               description="No tienes notificaciones pendientes. Te avisaremos cuando haya algo importante." 
             />
           )}
+        </div>
+
+        {/* Desktop Sidebar Settings */}
+        <div className="hidden lg:block lg:col-span-4 self-start sticky top-24">
+          <Card className="space-y-8 p-6 bg-light-surface/20 dark:bg-dark-surface/20 border-dashed border-2">
+            <h3 className="font-black text-sm uppercase tracking-widest text-light-text dark:text-dark-text border-b border-light-border dark:border-dark-border pb-4 mb-6">Configuración</h3>
+            
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-primary text-lg">account_balance_wallet</span>
+                  <p className="text-[10px] font-black text-light-muted dark:text-dark-muted uppercase tracking-widest">Presupuestos</p>
+                </div>
+                <Toggle label="Alerta al 80% del límite" checked={alertSettings.presupuestoAlerta}
+                  onChange={v => updateAlertSettings({ presupuestoAlerta: v })} />
+                <Toggle label="Presupuesto excedido" checked={alertSettings.presupuestoExcedido}
+                  onChange={v => updateAlertSettings({ presupuestoExcedido: v })} />
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-primary text-lg">payments</span>
+                  <p className="text-[10px] font-black text-light-muted dark:text-dark-muted uppercase tracking-widest">Pagos y Cuentas</p>
+                </div>
+                <Toggle label="Recordatorio pago próximo" checked={alertSettings.pagoProximo}
+                  onChange={v => updateAlertSettings({ pagoProximo: v })} />
+                <Toggle label="Saldo de cuenta bajo" checked={alertSettings.saldoBajo}
+                  onChange={v => updateAlertSettings({ saldoBajo: v })} />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-primary text-lg">flag</span>
+                  <p className="text-[10px] font-black text-light-muted dark:text-dark-muted uppercase tracking-widest">Logros</p>
+                </div>
+                <Toggle label="Meta completada" checked={alertSettings.metaLograda}
+                  onChange={v => updateAlertSettings({ metaLograda: v })} />
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
 

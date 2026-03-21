@@ -40,10 +40,10 @@ export default function Perfil() {
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-4xl mx-auto">
+    <div className="p-4 lg:p-8 space-y-8 max-w-6xl mx-auto animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">Perfil y configuración</h1>
-        <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-0.5">Gestiona tu cuenta y preferencias</p>
+        <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Perfil y Configuración</h1>
+        <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Gestiona tu cuenta y preferencias personales.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

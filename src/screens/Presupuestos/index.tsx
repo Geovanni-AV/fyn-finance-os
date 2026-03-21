@@ -90,13 +90,18 @@ export default function Presupuestos() {
   }, [transactions, hormigaThreshold, hormigaDailyLimit, currentDay])
 
   return (
-    <div className="p-4 lg:p-6 lg:max-w-4xl mx-auto space-y-8 animate-fade-in-up">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">Presupuestos</h1>
-        <Button variant="secondary" size="sm">
-          <span className="material-symbols-outlined text-lg">add</span>
-          Nuevo
-        </Button>
+    <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Presupuestos</h1>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Control de gastos y límites por categoría.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary">
+            <span className="material-symbols-outlined text-lg">add</span>
+            Nuevo
+          </Button>
+        </div>
       </div>
 
       {/* Resumen Global */}

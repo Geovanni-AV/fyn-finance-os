@@ -95,19 +95,7 @@ export default function Analisis() {
     )
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6 animate-fade-in">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Skeleton className="h-[400px]" />
-          <Skeleton className="h-[400px]" />
-        </div>
-      </div>
-    )
-  }
+
 
   const gastoDiff = analysisData.totalLast > 0 
     ? ((analysisData.totalThis - analysisData.totalLast) / analysisData.totalLast) * 100 
@@ -119,7 +107,7 @@ export default function Analisis() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Análisis y Reportes</h1>
-          <p className="text-sm text-light-text-2 dark:text-dark-text-2">Inteligencia financiera para mejores decisiones.</p>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Inteligencia financiera para mejores decisiones.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="lg">
@@ -286,8 +274,13 @@ export default function Analisis() {
           <div className="space-y-4">
             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-light-muted dark:text-dark-muted px-1">2. Rango de Tiempo</h4>
             <ChipSelector 
-              options={['Marzo 2026', 'Último Trimestre', 'Año 2026', 'Personalizado']} 
-              selected="Marzo 2026"
+              options={[
+                { value: 'mes', label: 'Marzo 2026' },
+                { value: 'trimestre', label: 'Último Trimestre' },
+                { value: 'year', label: 'Año 2026' },
+                { value: 'custom', label: 'Personalizado' }
+              ]} 
+              value="mes"
               onChange={() => {}}
             />
           </div>

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '../../context/AppContext'
 import { useNetWorth } from '../../hooks/useFinance'
 import { Card, Button, Drawer, Accordion, Badge } from '../../components/ui'
 import { formatMXN, formatMXNShort, CATEGORY_ICONS, CATEGORY_COLORS } from '../../types'
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts'
 
 type AssetType = 'banco' | 'inversion' | 'inmueble' | 'vehiculo' | 'otro'
 
@@ -50,15 +51,18 @@ export default function Cuentas() {
   return (
     <div className="p-4 lg:p-6 lg:max-w-6xl mx-auto space-y-8 animate-fade-in">
       {/* Header Section */}
+      <div className="p-4 lg:p-8 space-y-8 animate-fade-in">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight">Patrimonio y Cuentas</h1>
-          <p className="text-sm text-light-text-2 dark:text-dark-text-2">Gestión integral de tus activos y pasivos.</p>
+          <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Mis Cuentas</h1>
+          <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Gestiona tus activos y vehículos financieros.</p>
         </div>
-        <Button onClick={() => setIsAddModalOpen(true)} size="lg" className="shadow-lg shadow-primary/20">
-          <span className="material-symbols-outlined">add_circle</span>
-          Agregar Activo
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsAddModalOpen(true)}>
+            <span className="material-symbols-outlined text-lg">add</span>
+            Nueva Cuenta
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -101,22 +105,9 @@ export default function Cuentas() {
                   <p className="text-[10px] text-light-text-2 dark:text-dark-text-2 font-bold">{((d.value / totalWealth) * 100).toFixed(1)}%</p>
                 </div>
               </div>
-              
-              <div className="space-y-0.5">
-                <p className="text-[10px] font-bold text-light-muted dark:text-dark-muted uppercase tracking-tighter">Saldo Disponible</p>
-                <div className="text-xl font-black text-light-text dark:text-dark-text tabular-nums">
-                  {formatMXN(acc.balance)}
-                </div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-light-border/30 dark:border-dark-border/30 flex justify-between items-center">
-                <Badge variant={acc.balance > 0 ? 'success' : 'danger'}>
-                  {acc.balance > 0 ? 'Activa' : 'Sin fondo'}
-                </Badge>
-                <span className="text-[10px] text-light-muted dark:text-dark-muted font-medium">Auto-Sync</span>
-              </div>
-            </Card>
-          ))
+            ))}
+          </div>
+        </Card>
         ) : (
           <div className="col-span-full">
              <EmptyState 

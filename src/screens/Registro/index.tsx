@@ -73,8 +73,11 @@ export default function Registro() {
   ]
 
   return (
-    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5">
-      <h1 className="text-2xl font-bold text-light-text dark:text-dark-text">Registrar movimiento</h1>
+    <div className="p-4 lg:p-8 lg:max-w-4xl mx-auto space-y-8 animate-fade-in">
+      <div>
+        <h1 className="text-3xl font-black text-light-text dark:text-dark-text tracking-tight uppercase">Registrar Movimiento</h1>
+        <p className="text-sm text-light-text-2 dark:text-dark-text-2 italic">Añade transacciones manuales o estados de cuenta.</p>
+      </div>
 
       {/* Tab bar */}
       <div className="flex gap-1 bg-light-surface/50 dark:bg-dark-surface/50 backdrop-blur-md rounded-card p-1.5 shadow-inner border border-light-border/50 dark:border-dark-border/50">
