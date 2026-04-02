@@ -442,4 +442,22 @@ export function ChipSelector({ options, value, onChange, multi = false }:
     </div>
   )
 }
-
+// ─── CHECKBOX ─────────────────────────────────────────────────────────────────
+export function Checkbox({ checked, onChange, label, className = '' }:
+  { checked: boolean; onChange: (v: boolean) => void; label?: string; className?: string }) {
+  return (
+    <label className={`flex items-center gap-3 cursor-pointer group ${className}`}>
+      <div 
+        onClick={() => onChange(!checked)}
+        className={`w-5 h-5 rounded-md border-2 transition-all flex items-center justify-center ${
+          checked 
+            ? 'bg-primary border-primary shadow-sm shadow-primary/20' 
+            : 'bg-light-surface/50 dark:bg-dark-surface/50 border-light-border dark:border-dark-border group-hover:border-primary/50'
+        }`}
+      >
+        {checked && <span className="material-symbols-outlined text-white text-[16px] font-bold">check</span>}
+      </div>
+      {label && <span className="text-sm font-medium text-light-text dark:text-dark-text group-hover:text-primary transition-colors">{label}</span>}
+    </label>
+  )
+}

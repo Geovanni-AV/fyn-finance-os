@@ -53,7 +53,7 @@ export const mockTransactions: Transaction[] = [
   { id: 'tx-027', date: '2026-02-08', amount: 2800,  type: 'ingreso',       category: 'freelance',       description: 'Proyecto branding',         accountId: 'acc-3', source: 'manual' },
   { id: 'tx-028', date: '2026-02-05', amount: 390,   type: 'gasto',         category: 'transporte',      description: 'Uber × viajes',             accountId: 'acc-1', source: 'manual' },
   { id: 'tx-029', date: '2026-02-03', amount: 450,   type: 'gasto',         category: 'servicios',       description: 'CFE — luz',                 accountId: 'acc-1', source: 'pdf' },
-  { id: 'tx-030', date: '2026-02-01', amount: 9800,  type: 'gasto',         category: 'inversiones',     description: 'CETES directo',             accountId: 'acc-4', source: 'manual' },
+  { id: 'tx-030', date: '2026-02-01', amount: 9800,  type: 'ingreso',     category: 'inversiones',     description: 'CETES directo',             accountId: 'acc-4', source: 'manual' },
   // Enero
   { id: 'tx-031', date: '2026-01-31', amount: 18500, type: 'ingreso',       category: 'nomina',          description: 'Quincena ene 2da',          accountId: 'acc-1', source: 'sync' },
   { id: 'tx-032', date: '2026-01-20', amount: 5200,  type: 'gasto',         category: 'ropa',            description: 'Rebajas enero',             accountId: 'acc-2', source: 'manual' },

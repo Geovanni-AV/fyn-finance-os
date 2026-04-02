@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import AppLayout from './components/layout/AppLayout'
 
 // Screens
@@ -30,41 +31,55 @@ function InConstruction({ name }: { name: string }) {
   )
 }
 
-function RequireOnboarding({ children }: { children: JSX.Element }) {
+function RequireAuth({ children }: { children: JSX.Element }) {
+  const { user, loading, session } = useAuth()
+  
+  if (loading) return (
+    <div className="h-screen w-screen flex items-center justify-center bg-dark-bg">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+    </div>
+  )
+
+  if (!user || !session) return <Navigate to="/onboarding" replace />
+  
+  // Por ahora mantenemos la lógica de onboarding en localStorage hasta migrar perfiles
   const isDone = localStorage.getItem('fyn-onboarding-done')
-  if (!isDone) return <Navigate to="/onboarding" replace />
+  if (!isDone && window.location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />
+
   return children
 }
 
 export default function App() {
   return (
     <ThemeProvider>
-      <BrowserRouter>
-        <ToastProvider>
-          <AppProvider>
-            <Routes>
-              <Route path="/onboarding" element={<Onboarding />} />
-              
-              <Route path="/" element={<RequireOnboarding><AppLayout /></RequireOnboarding>}>
-                <Route index element={<Dashboard />} />
-                <Route path="registro" element={<Registro />} />
-                <Route path="cuentas" element={<Cuentas />} />
-                <Route path="alertas" element={<Alertas />} />
-                <Route path="presupuestos" element={<Presupuestos />} />
+      <AuthProvider>
+        <BrowserRouter>
+          <ToastProvider>
+            <AppProvider>
+              <Routes>
+                <Route path="/onboarding" element={<Onboarding />} />
                 
-                {/* Rutas en construcción */}
-                <Route path="analisis" element={<Analisis />} />
-                <Route path="perfil" element={<Perfil />} />
-                <Route path="deudas" element={<Deudas />} />
-                <Route path="metas" element={<Metas />} />
-                <Route path="calendario" element={<Calendario />} />
-                <Route path="simulador" element={<Simulador />} />
-                <Route path="net-worth" element={<NetWorth />} />
-              </Route>
-            </Routes>
-          </AppProvider>
-        </ToastProvider>
-      </BrowserRouter>
+                <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="registro" element={<Registro />} />
+                  <Route path="cuentas" element={<Cuentas />} />
+                  <Route path="alertas" element={<Alertas />} />
+                  <Route path="presupuestos" element={<Presupuestos />} />
+                  
+                  {/* Rutas en construcción */}
+                  <Route path="analisis" element={<Analisis />} />
+                  <Route path="perfil" element={<Perfil />} />
+                  <Route path="deudas" element={<Deudas />} />
+                  <Route path="metas" element={<Metas />} />
+                  <Route path="calendario" element={<Calendario />} />
+                  <Route path="simulador" element={<Simulador />} />
+                  <Route path="net-worth" element={<NetWorth />} />
+                </Route>
+              </Routes>
+            </AppProvider>
+          </ToastProvider>
+        </BrowserRouter>
+      </AuthProvider>
     </ThemeProvider>
   )
 }

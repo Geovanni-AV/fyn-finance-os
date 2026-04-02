@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useApp } from '../../context/AppContext'
 import { useToast } from '../../context/ToastContext'
-import { Button, Input, Card } from '../../components/ui'
+import { Button, Input, Card, Checkbox } from '../../components/ui'
 import { CATEGORY_ICONS, CATEGORY_LABELS, type CategoryId, type TransactionType } from '../../types'
+import { useAuth } from '../../context/AuthContext'
 
 const CATEGORIES: CategoryId[] = [
   'alimentacion', 'transporte', 'entretenimiento', 'salud',
@@ -31,7 +32,73 @@ export default function Registro() {
   const [notes, setNotes]       = useState('')
 
   // PDF state
-  const [pdfStep, setPdfStep] = useState<0|1|2|3|4>(0)
+  const { user } = useAuth()
+  const [pdfStep, setPdfStep]   = useState<0|1|2|3|4>(0)
+  const [isUploading, setIsUploading] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [parsedTransactions, setParsedTransactions] = useState<any[]>([])
+  const [selectedTransactions, setSelectedTransactions] = useState<number[]>([]) // Indices
+  const [detectedBank, setDetectedBank] = useState('bbva')
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    setSelectedFile(file)
+    setPdfStep(1)
+    setIsUploading(true)
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('userId', user?.id || 'anonymous')
+    formData.append('accountId', accountId)
+    formData.append('bankId', detectedBank)
+
+    try {
+      const response = await fetch('http://localhost:3001/api/upload-bank-statement', {
+        method: 'POST',
+        body: formData
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        setParsedTransactions(result.transactions)
+        setSelectedTransactions(result.transactions.map((_: any, i: number) => i))
+        setPdfStep(2)
+      } else {
+        toastError(result.error || 'Error al procesar el PDF')
+        setPdfStep(0)
+      }
+    } catch (err) {
+      toastError('No se pudo conectar con el servidor local')
+      setPdfStep(0)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleImportSelected = () => {
+    selectedTransactions.forEach(idx => {
+      const tx = parsedTransactions[idx]
+      addTransaction({
+        date: tx.date,
+        amount: tx.amount,
+        type: tx.type,
+        category: 'otros',
+        description: tx.description,
+        accountId: accountId,
+        source: 'pdf'
+      })
+    })
+    success(`${selectedTransactions.length} movimientos importados`)
+    setPdfStep(3)
+  }
+
+  const toggleTx = (idx: number) => {
+    setSelectedTransactions(prev => 
+      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    )
+  }
 
   const TYPE_COLORS: Record<TransactionType, string> = {
     gasto: 'text-danger border-danger',
@@ -232,45 +299,123 @@ export default function Registro() {
           </div>
 
           {pdfStep === 0 && (
-            <div className="border-2 border-dashed border-light-border dark:border-dark-border rounded-card p-10 text-center space-y-4 hover:border-primary/50 transition-colors cursor-pointer"
-              onClick={() => setPdfStep(1)}>
-              <span className="material-symbols-outlined text-5xl text-light-muted dark:text-dark-muted">upload_file</span>
-              <div>
-                <p className="font-medium text-light-text dark:text-dark-text">Arrastra tu estado de cuenta</p>
-                <p className="text-sm text-light-text-2 dark:text-dark-text-2">PDF de BBVA, Nu, Santander, HSBC...</p>
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm font-medium text-light-text dark:text-dark-text mb-2">Banco emisor</p>
+                  <select value={detectedBank} onChange={e => setDetectedBank(e.target.value)}
+                    className="w-full bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border rounded-btn px-3 py-2 text-sm">
+                    <option value="bbva">BBVA</option>
+                    <option value="nu">Nu México</option>
+                    <option value="santander">Santander</option>
+                  </select>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-light-text dark:text-dark-text mb-2">Cuenta destino</p>
+                  <select value={accountId} onChange={e => setAccountId(e.target.value)}
+                    className="w-full bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border rounded-btn px-3 py-2 text-sm">
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
               </div>
-              <Button variant="secondary" size="sm">Seleccionar archivo</Button>
+
+              <label className="block border-2 border-dashed border-light-border dark:border-dark-border rounded-card p-10 text-center space-y-4 hover:border-primary/50 transition-colors cursor-pointer group">
+                <input type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+                <span className="material-symbols-outlined text-5xl text-light-muted dark:text-dark-muted group-hover:text-primary transition-colors">upload_file</span>
+                <div>
+                  <p className="font-medium text-light-text dark:text-dark-text">Selecciona o arrastra tu estado de cuenta</p>
+                  <p className="text-sm text-light-text-2 dark:text-dark-text-2">Solo archivos PDF (BBVA, Nu...)</p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-full text-sm font-bold group-hover:bg-primary group-hover:text-white transition-all">
+                  <span className="material-symbols-outlined text-base">add_circle</span>
+                  Elegir archivo
+                </div>
+              </label>
             </div>
           )}
+
           {pdfStep === 1 && (
             <div className="text-center space-y-4 py-8">
               <div className="w-16 h-16 mx-auto border-4 border-primary border-t-transparent rounded-full animate-spin" />
-              <p className="font-medium text-light-text dark:text-dark-text">Analizando tu estado de cuenta...</p>
-              <Button size="sm" onClick={() => setPdfStep(2)}>Simular análisis completo</Button>
+              <div>
+                <p className="font-bold text-lg text-light-text dark:text-dark-text">Analizando PDF...</p>
+                <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-1">Extrayendo movimientos {selectedFile?.name}</p>
+              </div>
             </div>
           )}
+
           {pdfStep === 2 && (
-            <div className="space-y-4">
-              <p className="text-sm font-medium text-light-text dark:text-dark-text">Se encontraron 12 transacciones. Selecciona cuáles importar:</p>
-              {['Netflix - $299', 'Walmart - $580', 'Uber - $125', 'CFE - $450'].map(item => (
-                <label key={item} className="flex items-center gap-3 p-3 bg-light-surface dark:bg-dark-surface rounded-btn cursor-pointer">
-                  <input type="checkbox" defaultChecked className="accent-primary w-4 h-4" />
-                  <span className="text-sm text-light-text dark:text-dark-text">{item}</span>
-                </label>
-              ))}
-              <Button className="w-full justify-center" onClick={() => setPdfStep(3)}>Importar seleccionadas</Button>
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-light-border dark:border-dark-border pb-4">
+                <div>
+                  <h3 className="font-bold text-light-text dark:text-dark-text">Movimientos encontrados</h3>
+                  <p className="text-xs text-light-text-2 dark:text-dark-text-2">Revisa y ajusta antes de importar</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-black text-primary">{selectedTransactions.length}</span>
+                  <span className="text-xs font-bold text-light-text-2 dark:text-dark-text-2 ml-1 uppercase">Seleccionados</span>
+                </div>
+              </div>
+
+              <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {parsedTransactions.map((tx, i) => (
+                  <div key={i} onClick={() => toggleTx(i)}
+                    className={`flex items-center gap-4 p-4 rounded-card border transition-all cursor-pointer ${
+                      selectedTransactions.includes(i) 
+                        ? 'bg-primary/5 border-primary/30 shadow-sm' 
+                        : 'bg-light-surface/30 dark:bg-dark-surface/30 border-transparent opacity-60'
+                    }`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                      tx.type === 'ingreso' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+                    }`}>
+                      <span className="material-symbols-outlined text-xl">
+                        {tx.type === 'ingreso' ? 'south_west' : 'north_east'}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm text-light-text dark:text-dark-text truncate">{tx.description}</p>
+                      <p className="text-[10px] font-bold text-light-text-2 dark:text-dark-text-2 uppercase tracking-tighter">
+                        {tx.date} · {detectedBank.toUpperCase()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-black tracking-tight ${tx.type === 'ingreso' ? 'text-success' : 'text-light-text dark:text-dark-text'}`}>
+                        {tx.type === 'ingreso' ? '+' : '-'}${tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button variant="secondary" className="flex-1" onClick={() => setPdfStep(0)}>Cancelar</Button>
+                <Button className="flex-[2] justify-center" onClick={handleImportSelected}>
+                  Importar {selectedTransactions.length} movimientos
+                </Button>
+              </div>
             </div>
           )}
+
           {pdfStep >= 3 && (
-            <div className="text-center space-y-4 py-8">
-              <div className="w-14 h-14 mx-auto bg-success/10 rounded-full flex items-center justify-center">
-                <span className="material-symbols-outlined text-3xl text-success">check_circle</span>
+            <div className="text-center space-y-6 py-8">
+              <div className="relative inline-block">
+                <div className="w-20 h-20 mx-auto bg-success/20 rounded-full flex items-center justify-center animate-pulse">
+                  <span className="material-symbols-outlined text-5xl text-success">done_all</span>
+                </div>
+                <div className="absolute -bottom-2 -right-2 bg-dark-bg p-1 rounded-full border border-success">
+                  <div className="bg-success w-4 h-4 rounded-full" />
+                </div>
               </div>
               <div>
-                <p className="font-semibold text-light-text dark:text-dark-text">¡Importación completada!</p>
-                <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-1">4 transacciones importadas exitosamente</p>
+                <h3 className="text-2xl font-black text-light-text dark:text-dark-text uppercase tracking-tight">¡Importación Exitosa!</h3>
+                <p className="text-sm text-light-text-2 dark:text-dark-text-2 mt-2 max-w-[280px] mx-auto">
+                  Los {selectedTransactions.length} movimientos han sido procesados y guardados en tu historial.
+                </p>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setPdfStep(0)}>Importar otro PDF</Button>
+              <div className="flex flex-col gap-2">
+                <Button className="w-full justify-center" variant="primary" onClick={() => setPdfStep(0)}>Importar otro PDF</Button>
+                <Button className="w-full justify-center" variant="secondary" onClick={() => setTab('manual')}>Ir al resumen</Button>
+              </div>
             </div>
           )}
         </Card>
