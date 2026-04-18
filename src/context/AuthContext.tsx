@@ -1,10 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { type Session, type User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
 
 interface AuthContextType {
-  session: Session | null | any
-  user: User | null | any
+  session: any
+  user: any
   loading: boolean
   signOut: () => Promise<void>
   isElectron: boolean
@@ -16,8 +14,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<any>(null)
+  const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   const refreshProfile = async () => {
@@ -49,31 +47,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } finally {
         setLoading(false)
       }
+    } else {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    if (isElectron) {
-      refreshProfile()
-      return
-    }
-
-    // Supabase Fallback
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
+    refreshProfile()
   }, [])
 
   const signOut = async () => {
@@ -82,7 +62,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null)
       return
     }
-    await supabase.auth.signOut()
   }
 
   return (
@@ -99,3 +78,4 @@ export function useAuth() {
   }
   return context
 }
+

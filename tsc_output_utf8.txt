@@ -1,4 +1,0 @@
-﻿src/mockData/index.ts(37,54): error TS2322: Type '"freelance"' is not assignable to type 'TransactionType'.
-src/mockData/index.ts(53,54): error TS2322: Type '"freelance"' is not assignable to type 'TransactionType'.
-src/mockData/index.ts(56,54): error TS2322: Type '"inversiones"' is not assignable to type 'TransactionType'.
-src/mockData/index.ts(62,54): error TS2322: Type '"freelance"' is not assignable to type 'TransactionType'.
