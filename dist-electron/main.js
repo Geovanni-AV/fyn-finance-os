@@ -593,6 +593,26 @@ function createWindow() {
     backgroundColor: "#0e0e0f",
     show: false
   });
+  const originalLog = console.log;
+  const originalError = console.error;
+  const sendLog = (type, message) => {
+    if (win == null ? void 0 : win.webContents) {
+      originalLog(`[Internal ${type}]`, message);
+      win.webContents.send("system:log", {
+        timestamp: (/* @__PURE__ */ new Date()).toLocaleTimeString(),
+        type,
+        message: typeof message === "object" ? JSON.stringify(message, null, 2) : String(message)
+      });
+    }
+  };
+  console.log = (...args) => {
+    originalLog(...args);
+    sendLog("INFO", args.join(" "));
+  };
+  console.error = (...args) => {
+    originalError(...args);
+    sendLog("ERROR", args.join(" "));
+  };
   win.once("ready-to-show", () => {
     win == null ? void 0 : win.show();
   });

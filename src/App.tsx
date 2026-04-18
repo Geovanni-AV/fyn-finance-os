@@ -19,6 +19,7 @@ import Metas from './screens/Metas'
 import Simulador from './screens/Simulador'
 import NetWorth from './screens/NetWorth'
 import Perfil from './screens/Perfil'
+import Terminal from './screens/Terminal'
 
 // Fallback visual para rutas no implementadas aún
 function InConstruction({ name }: { name: string }) {
@@ -71,6 +72,7 @@ export default function App() {
                   <Route path="calendario" element={<Calendario />} />
                   <Route path="simulador" element={<Simulador />} />
                   <Route path="net-worth" element={<NetWorth />} />
+                  <Route path="terminal" element={<Terminal />} />
                 </Route>
               </Routes>
             </AppProvider>

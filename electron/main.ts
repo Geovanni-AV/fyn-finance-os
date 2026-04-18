@@ -41,6 +41,34 @@ function createWindow() {
     show: false,
   })
 
+  // Guardar referencias originales para evitar recursión infinita
+  const originalLog = console.log;
+  const originalError = console.error;
+
+  // Función para enviar logs a la UI sin causar loop
+  const sendLog = (type: string, message: any) => {
+    if (win?.webContents) {
+      // Usar original para no entrar en bucle
+      originalLog(`[Internal ${type}]`, message)
+      win.webContents.send('system:log', { 
+        timestamp: new Date().toLocaleTimeString(),
+        type, 
+        message: typeof message === 'object' ? JSON.stringify(message, null, 2) : String(message) 
+      })
+    }
+  }
+
+  // Interceptar logs normales para enviarlos también a la UI
+  console.log = (...args) => {
+    originalLog(...args);
+    sendLog('INFO', args.join(' '));
+  };
+
+  console.error = (...args) => {
+    originalError(...args);
+    sendLog('ERROR', args.join(' '));
+  };
+
   // win.webContents.openDevTools() // Desactivado para producción
 
   win.once('ready-to-show', () => {

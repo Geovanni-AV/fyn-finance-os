@@ -30,6 +30,7 @@ const NAV_GROUPS = [
     label: 'Sistema',
     items: [
       { path: '/alertas', label: 'Alertas', icon: 'notifications' },
+      { path: '/terminal', label: 'Terminal', icon: 'terminal' },
       { path: '/perfil', label: 'Mi Perfil', icon: 'person' },
     ]
   }
