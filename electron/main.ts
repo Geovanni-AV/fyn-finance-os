@@ -192,11 +192,14 @@ app.whenReady().then(() => {
       const dataBuffer = fs.readFileSync(filePath)
       const data = await parsePdf(dataBuffer)
       const text = data.text
+      console.log(`[Main] PDF Text extracted. Length: ${text.length} chars.`)
 
       // 2. Detectar banco
       const bankId = detectBank(text)
+      console.log(`[Main] Bank detected: ${bankId}`)
+      
       if (bankId === 'Generic') {
-        return { success: false, error: 'Banco no reconocido automáticamente.' }
+        return { success: false, error: 'Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original.' }
       }
 
       // 3. Extraer metadatos
@@ -229,9 +232,14 @@ app.whenReady().then(() => {
         )
         account = { id: result.lastInsertRowid.toString(), name: meta.accountName }
       }
-
+      
       // 6. Parsear transacciones
       const parsed = parsePdfContent(bankId, text)
+      console.log(`[Main] Transactions parsed: ${parsed.length}`)
+
+      if (parsed.length === 0) {
+        return { success: false, error: `No se encontraron transacciones legibles para ${bankId}.` }
+      }
       
       // 7. Insertar con deduplicación
       const insertStmt = db.prepare(`

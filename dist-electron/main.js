@@ -687,7 +687,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("pdf:parseAndSave", async (event, filePath) => {
     try {
-      const { detectBank, parsePdfContent } = await import("./index-CA6deghI.js");
+      const { detectBank, parsePdfContent } = await import("./index-CY4DtIPo.js");
       const { extractAccountMeta } = await import("./metaExtractor-DH8tcHXP.js");
       const { inferCategory, generateTxHash } = await import("./categoryInfer-Bf2rSKEv.js");
       const pdfRaw = require$1("pdf-parse");
@@ -701,9 +701,11 @@ app.whenReady().then(() => {
       const dataBuffer = fs.readFileSync(filePath);
       const data = await parsePdf(dataBuffer);
       const text = data.text;
+      console.log(`[Main] PDF Text extracted. Length: ${text.length} chars.`);
       const bankId = detectBank(text);
+      console.log(`[Main] Bank detected: ${bankId}`);
       if (bankId === "Generic") {
-        return { success: false, error: "Banco no reconocido automáticamente." };
+        return { success: false, error: "Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original." };
       }
       const meta = extractAccountMeta(text, bankId);
       const profile = db.prepare("SELECT id FROM profiles LIMIT 1").get();
@@ -730,6 +732,10 @@ app.whenReady().then(() => {
         account = { id: result.lastInsertRowid.toString(), name: meta.accountName };
       }
       const parsed = parsePdfContent(bankId, text);
+      console.log(`[Main] Transactions parsed: ${parsed.length}`);
+      if (parsed.length === 0) {
+        return { success: false, error: `No se encontraron transacciones legibles para ${bankId}.` };
+      }
       const insertStmt = db.prepare(`
         INSERT OR IGNORE INTO transactions 
         (user_id, account_id, date, amount, type, category, description, source, dedup_hash)

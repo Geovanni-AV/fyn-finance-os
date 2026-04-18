@@ -61,22 +61,33 @@ export function parseOpenbank(text: string): ParsedTransaction[] {
 
     const amounts = [...amountLine.matchAll(/\$\s*([\d,]+\.\d{2})/g)].map(m => parseAmount(m[1]))
 
-    if (amounts.length < 2) { i++; continue }
+    // Lógica robusta para Openbank (puede haber 2 o 3 montos)
+    // Caso 3 montos: [Depósito, Retiro, Saldo]
+    // Caso 2 montos: [Movimiento, Saldo]
+    let movement = 0
+    let type: 'ingreso' | 'gasto' = 'gasto'
 
-    const movimiento = amounts[amounts.length - 2]
-
-    if (movimiento <= 0) { i++; continue }
-    if (isInternal(description)) { i++; continue }
-
-    let type: 'ingreso' | 'gasto'
     if (amounts.length >= 3) {
       const deposit = amounts[0]
       const withdrawal = amounts[1]
-      type = deposit > 0 && withdrawal === 0 ? 'ingreso' : 'gasto'
-    } else {
-      const isDeposit = /recib|abono|depósit|SPEI recib/i.test(description)
+      if (deposit > 0) {
+        movement = deposit
+        type = 'ingreso'
+      } else {
+        movement = withdrawal
+        type = 'gasto'
+      }
+    } else if (amounts.length === 2) {
+      movement = amounts[0]
+      const isDeposit = /recib|abono|depósit|interés|interes|SPEI recib|traspaso/i.test(description)
       type = isDeposit ? 'ingreso' : 'gasto'
+    } else {
+      i++
+      continue
     }
+
+    if (movement <= 0) { i++; continue }
+    if (isInternal(description)) { i++; continue }
 
     const cleanDesc = description
       .replace(/\d{15,}/g, '')
@@ -85,7 +96,7 @@ export function parseOpenbank(text: string): ParsedTransaction[] {
 
     transactions.push({
       date: dateStr,
-      amount: movimiento,
+      amount: movement,
       type,
       description: cleanDesc || 'Transferencia Openbank',
     })
