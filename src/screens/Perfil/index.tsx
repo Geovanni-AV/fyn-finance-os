@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { Card, Toggle, Button, Skeleton } from '../../components/ui'
 
 export default function Perfil() {
   const { profile, updateProfile } = useApp()
-  const { success } = useToast()
+  const { refreshProfile } = useAuth()
+  const { success, error } = useToast()
+  
   const [isLoading, setIsLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedName, setEditedName] = useState(profile.name)
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 800)
@@ -35,8 +40,33 @@ export default function Perfil() {
     success(`Modo ${next === 'dark' ? 'oscuro' : 'claro'} activado`)
   }
 
+  const handleSaveName = async () => {
+    if (!editedName.trim()) return
+    await updateProfile({ name: editedName })
+    setIsEditing(false)
+    success('Perfil actualizado correctamente')
+    // Refrescamos auth para que el sidebar muestre el nuevo nombre
+    await refreshProfile()
+  }
+
+  const handleReset = async () => {
+    const confirmed = window.confirm('¿ESTÁS SEGURO? Esta acción eliminará permanentemente todos tus datos financieros y perfiles de este equipo. No se puede deshacer.')
+    if (confirmed) {
+      const electron = (window as any).electronAPI
+      if (electron) {
+        await electron.invoke('reset-database')
+        success('Base de datos depurada. Reiniciando...')
+        setTimeout(() => {
+          window.location.reload()
+        }, 1500)
+      } else {
+        error('Solo disponible en la versión de escritorio')
+      }
+    }
+  }
+
   const handleExport = () => {
-    success('Datos exportados correctamente')
+    success('Datos exportados correctamente (Simulado)')
   }
 
   return (
@@ -57,16 +87,40 @@ export default function Perfil() {
         <div className="lg:col-span-4 space-y-8">
           <div className="depth-1 p-8 rounded-[3rem] text-center space-y-6">
             <div className="relative inline-block">
-              <div className="w-24 h-24 rounded-[2rem] depth-2 flex items-center justify-center mx-auto border border-primary/10">
+              <div className="w-24 h-24 rounded-[2rem] depth-2 flex items-center justify-center mx-auto border border-primary/10 bg-primary/5">
                 <span className="text-3xl font-black text-primary tracking-tighter">{profile.name.slice(0, 2).toUpperCase()}</span>
               </div>
               <div className="absolute -bottom-2 right-0 bg-primary shadow-luster text-white text-[8px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">Atelier Pro</div>
             </div>
-            <div className="space-y-1">
-              <h3 className="text-xl font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tight">{profile.name}</h3>
-              <p className="text-xs font-medium text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">{profile.email}</p>
+            
+            <div className="space-y-2">
+              {isEditing ? (
+                <div className="space-y-3">
+                  <input 
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    className="w-full bg-primary/5 border border-primary/20 rounded-xl px-4 py-2 text-center text-lg font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <Button onClick={() => setIsEditing(false)} variant="secondary" className="flex-1 py-2 text-[9px] uppercase font-black tracking-widest !rounded-xl">Cancelar</Button>
+                    <Button onClick={handleSaveName} className="flex-1 py-2 text-[9px] uppercase font-black tracking-widest !rounded-xl">Guardar</Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h3 className="text-xl font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tight">{profile.name}</h3>
+                  <p className="text-xs font-medium text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 italic">Inversionista Individual</p>
+                  <Button 
+                    onClick={() => setIsEditing(true)}
+                    className="w-full justify-center !rounded-full py-4 text-[10px] uppercase font-black tracking-widest mt-4" 
+                    variant="secondary"
+                  >
+                    Editar Identidad
+                  </Button>
+                </>
+              )}
             </div>
-            <Button className="w-full justify-center !rounded-full py-4 text-[10px] uppercase font-black tracking-widest" variant="secondary">Editar Identidad</Button>
           </div>
 
           <div className="depth-1 p-8 rounded-[3rem] space-y-8">
@@ -88,7 +142,7 @@ export default function Perfil() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 italic">Moneda Base</span>
-                <span className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-black rounded-full">MXN</span>
+                <span className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-black rounded-full tabular-nums">MXN</span>
               </div>
             </div>
           </div>
@@ -170,7 +224,13 @@ export default function Perfil() {
                   <p className="text-sm font-bold text-danger tracking-tight">Depuración de Cuenta</p>
                   <p className="text-[10px] font-medium text-danger/60 italic">Eliminación permanente de todos los registros</p>
                 </div>
-                <Button variant="danger" className="!rounded-full px-8 py-3 !text-[9px] font-black uppercase tracking-widest shadow-lg shadow-danger/10">Eliminar</Button>
+                <Button 
+                  variant="danger" 
+                  onClick={handleReset}
+                  className="!rounded-full px-8 py-3 !text-[9px] font-black uppercase tracking-widest shadow-lg shadow-danger/10"
+                >
+                  Eliminar
+                </Button>
               </div>
             </div>
           </div>
@@ -180,16 +240,16 @@ export default function Perfil() {
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-primary/10 transition-colors" />
             <div className="flex items-center gap-6 relative z-10">
               <div className="w-14 h-14 rounded-2xl bg-primary shadow-luster flex items-center justify-center text-white">
-                <span className="material-symbols-outlined font-light text-3xl">fyn_logo</span>
+                <span className="material-symbols-outlined font-light text-3xl">terminal</span>
               </div>
               <div className="space-y-0.5">
                 <p className="text-lg font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tighter">Fyn Atelier OS</p>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-30">Quantum Build v1.4.2</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-30 italic">Desktop Build v1.5.0</p>
               </div>
             </div>
             <div className="flex gap-6 relative z-10">
               <span className="text-[10px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 cursor-pointer hover:text-primary transition-colors">Privacidad</span>
-              <span className="text-[10px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 cursor-pointer hover:text-primary transition-colors">Términos</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 cursor-pointer hover:text-primary transition-colors">Local-Storage Only</span>
             </div>
           </div>
         </div>

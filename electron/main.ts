@@ -126,6 +126,20 @@ app.whenReady().then(() => {
   ipcMain.handle('mark-alert-read', (_, id) => alertRepo.markAsRead(id))
   ipcMain.handle('mark-all-alerts-read', (_, userId) => alertRepo.markAllAsRead(userId))
 
+  // System & Management
+  ipcMain.handle('reset-database', async () => {
+    console.log('[Main] Resetting database...')
+    db.prepare('DELETE FROM alerts').run()
+    db.prepare('DELETE FROM transactions').run()
+    db.prepare('DELETE FROM accounts').run()
+    db.prepare('DELETE FROM saving_goals').run()
+    db.prepare('DELETE FROM budgets').run()
+    db.prepare('DELETE FROM debts').run()
+    db.prepare('DELETE FROM net_worth_history').run()
+    db.prepare('DELETE FROM profiles').run()
+    return true
+  })
+
   console.log('Database initialized at:', dbPath)
 
   createWindow()
