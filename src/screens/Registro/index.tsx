@@ -41,36 +41,39 @@ export default function Registro() {
   const [detectedBank, setDetectedBank] = useState('bbva')
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const file = (e.target as any).files?.[0]
     if (!file) return
     
+    // En Electron, podemos obtener la ruta real del archivo
+    const filePath = file.path
+    if (!filePath) {
+      toastError('No se pudo obtener la ruta del archivo. Intenta arrastrar el archivo.')
+      return
+    }
+
     setSelectedFile(file)
     setPdfStep(1)
     setIsUploading(true)
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('userId', user?.id || 'anonymous')
-    formData.append('accountId', accountId)
-    formData.append('bankId', detectedBank)
-
     try {
-      const response = await fetch('http://localhost:3001/api/upload-bank-statement', {
-        method: 'POST',
-        body: formData
-      })
+      const electron = (window as any).electronAPI
+      if (!electron) throw new Error('Versión de escritorio no detectada')
+
+      const result = await electron.invoke('parse-pdf', filePath)
       
-      const result = await response.json()
       if (result.success) {
+        setDetectedBank(result.bank)
         setParsedTransactions(result.transactions)
         setSelectedTransactions(result.transactions.map((_: any, i: number) => i))
         setPdfStep(2)
+        success(`Banco detectado: ${result.bank}`)
       } else {
         toastError(result.error || 'Error al procesar el PDF')
         setPdfStep(0)
       }
-    } catch (err) {
-      toastError('No se pudo conectar con el servidor local')
+    } catch (err: any) {
+      console.error('PDF Error:', err)
+      toastError(err.message || 'Error crítico al leer el archivo')
       setPdfStep(0)
     } finally {
       setIsUploading(false)
@@ -338,6 +341,7 @@ export default function Registro() {
                     <option value="bbva">BBVA</option>
                     <option value="nu">Nu México</option>
                     <option value="santander">Santander</option>
+                    <option value="openbank">Openbank</option>
                   </select>
                 </div>
                 <div className="space-y-3">

@@ -140,6 +140,31 @@ app.whenReady().then(() => {
     return true
   })
 
+  ipcMain.handle('parse-pdf', async (_, filePath) => {
+    try {
+      const { detectBank, parsePdfContent } = await import('./parsers/index')
+      const pdf = (await import('pdf-parse')).default
+      const fs = await import('node:fs')
+
+      const dataBuffer = fs.readFileSync(filePath)
+      const data = await pdf(dataBuffer)
+      const text = data.text
+
+      const bank = detectBank(text)
+      const transactions = parsePdfContent(bank, text)
+
+      return {
+        success: true,
+        bank,
+        count: transactions.length,
+        transactions
+      }
+    } catch (error: any) {
+      console.error('[Main] PDF Parse Error:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
   console.log('Database initialized at:', dbPath)
 
   createWindow()
