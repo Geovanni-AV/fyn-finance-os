@@ -14,7 +14,7 @@ export default defineConfig({
             outDir: 'dist-electron', 
             sourcemap: true,
             rollupOptions: {
-              external: ['better-sqlite3']
+              external: ['better-sqlite3', 'pdf-parse']
             }
           } 
         }

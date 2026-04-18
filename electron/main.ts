@@ -147,14 +147,22 @@ app.whenReady().then(() => {
       const { detectBank, parsePdfContent } = await import('./parsers/index')
       const { extractAccountMeta } = await import('./parsers/metaExtractor')
       const { inferCategory, generateTxHash } = await import('./utils/categoryInfer')
-      const pdf = require('pdf-parse') // ← Uso de require nativo
-      const fs = await import('node:fs')
+      const pdfRaw = require('pdf-parse')
+      console.log('[Main] pdf-parse loaded. Type:', typeof pdfRaw)
 
+      // Determinar la función de parseo real
+      const parsePdf = (typeof pdfRaw === 'function') ? pdfRaw : pdfRaw.default
+      
+      if (typeof parsePdf !== 'function') {
+        throw new Error(`pdf-parse is not a function (it is a ${typeof parsePdf})`)
+      }
+
+      const fs = await import('node:fs')
       console.log('[Main] Starting PDF parse for:', filePath)
 
       // 1. Leer y extraer texto
       const dataBuffer = fs.readFileSync(filePath)
-      const data = await pdf(dataBuffer)
+      const data = await parsePdf(dataBuffer)
       const text = data.text
 
       // 2. Detectar banco

@@ -670,11 +670,16 @@ app.whenReady().then(() => {
       const { detectBank, parsePdfContent } = await import("./index-CA6deghI.js");
       const { extractAccountMeta } = await import("./metaExtractor-DH8tcHXP.js");
       const { inferCategory, generateTxHash } = await import("./categoryInfer-Bf2rSKEv.js");
-      const pdf = require$1("pdf-parse");
+      const pdfRaw = require$1("pdf-parse");
+      console.log("[Main] pdf-parse loaded. Type:", typeof pdfRaw);
+      const parsePdf = typeof pdfRaw === "function" ? pdfRaw : pdfRaw.default;
+      if (typeof parsePdf !== "function") {
+        throw new Error(`pdf-parse is not a function (it is a ${typeof parsePdf})`);
+      }
       const fs = await import("node:fs");
       console.log("[Main] Starting PDF parse for:", filePath);
       const dataBuffer = fs.readFileSync(filePath);
-      const data = await pdf(dataBuffer);
+      const data = await parsePdf(dataBuffer);
       const text = data.text;
       const bankId = detectBank(text);
       if (bankId === "Generic") {
