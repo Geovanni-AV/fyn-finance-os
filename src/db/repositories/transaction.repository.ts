@@ -32,9 +32,10 @@ export class TransactionRepository {
     const stmt = this.db.prepare(`
       INSERT INTO transactions (id, user_id, account_id, date, amount, type, category, description, source, is_recurring, recurrence_period, tags, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id
     `)
 
-    stmt.run(
+    const result = stmt.get(
       id,
       userId,
       tx.accountId,
@@ -48,9 +49,9 @@ export class TransactionRepository {
       tx.recurrencePeriod || null,
       JSON.stringify(tx.tags || []),
       tx.notes || null
-    )
+    ) as { id: string }
 
-    return id || 'unknown'
+    return result.id
   }
 
   delete(id: string): void {

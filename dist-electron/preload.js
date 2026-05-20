@@ -1,13 +1,14 @@
-const { contextBridge, ipcRenderer } = require("electron");
-contextBridge.exposeInMainWorld("electronAPI", {
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-  parseAndSavePDF: (filePath) => ipcRenderer.invoke("pdf:parseAndSave", filePath),
-  showOpenDialog: () => ipcRenderer.invoke("show-open-dialog"),
-  onLog: (callback) => {
-    ipcRenderer.on("system:log", (_event, log) => callback(log));
+const { contextBridge: s, ipcRenderer: o } = require("electron");
+s.exposeInMainWorld("electronAPI", {
+  invoke: (e, ...n) => o.invoke(e, ...n),
+  parseAndSavePDF: (e) => o.invoke("pdf:parseAndSave", e),
+  showOpenDialog: () => o.invoke("show-open-dialog"),
+  logRendererError: (e) => o.invoke("system:log-renderer-error", e),
+  onLog: (e) => {
+    o.on("system:log", (n, r) => e(r));
   },
-  on: (channel, callback) => {
-    ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+  on: (e, n) => {
+    o.on(e, (r, ...i) => n(...i));
   }
 });
 //# sourceMappingURL=preload.js.map

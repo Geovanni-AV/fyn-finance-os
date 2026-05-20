@@ -26,8 +26,9 @@ export class GoalRepository {
     const stmt = this.db.prepare(`
       INSERT INTO saving_goals (id, user_id, name, type, target_amount, current_amount, target_date, monthly_contribution, expected_return, color, icon)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id
     `)
-    stmt.run(
+    const result = stmt.get(
       id,
       userId,
       goal.name,
@@ -39,8 +40,8 @@ export class GoalRepository {
       goal.expectedReturn || 0.07,
       goal.color || '#2563EB',
       goal.icon || 'savings'
-    )
-    return id || 'unknown'
+    ) as { id: string }
+    return result.id
   }
 
   update(id: string, updates: Partial<SavingGoal>): void {

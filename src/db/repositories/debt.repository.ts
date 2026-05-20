@@ -25,9 +25,10 @@ export class DebtRepository {
     const stmt = this.db.prepare(`
       INSERT INTO debts (id, user_id, name, type, balance, original_balance, interest_rate, minimum_payment, due_day, account_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id
     `)
 
-    stmt.run(
+    const result = stmt.get(
       id,
       userId,
       debt.name,
@@ -38,9 +39,9 @@ export class DebtRepository {
       debt.minimumPayment,
       debt.dueDay,
       debt.accountId || null
-    )
+    ) as { id: string }
 
-    return id || 'unknown'
+    return result.id
   }
 
   delete(id: string): void {

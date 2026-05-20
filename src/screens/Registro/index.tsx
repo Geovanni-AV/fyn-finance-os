@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApp } from '../../context/AppContext'
 import { useToast } from '../../context/ToastContext'
 import { Button, Input, Card, Checkbox } from '../../components/ui'
@@ -16,9 +17,10 @@ const RECURRENCE = ['diario', 'semanal', 'quincenal', 'mensual', 'anual'] as con
 type Tab = 'manual' | 'ocr' | 'pdf' | 'sync'
 
 export default function Registro() {
-  const { accounts, addTransaction } = useApp()
+  const { accounts, addTransaction, refreshData } = useApp()
   const { success, error: toastError } = useToast()
   const [tab, setTab] = useState<Tab>('manual')
+  const navigate = useNavigate()
 
   // Manual form state
   const [txType, setTxType] = useState<TransactionType>('gasto')
@@ -61,14 +63,17 @@ export default function Registro() {
 
       const result = await electron.invoke('parse-pdf', filePath)
       
-      if (result.success) {
+      if (result && result.isError) {
+        toastError(`${result.message} (Ref: ${result.ref})`)
+        setPdfStep(0)
+      } else if (result && result.success) {
         setDetectedBank(result.bank)
         setParsedTransactions(result.transactions)
         setSelectedTransactions(result.transactions.map((_: any, i: number) => i))
         setPdfStep(2)
         success(`Banco detectado: ${result.bank}`)
       } else {
-        toastError(result.error || 'Error al procesar el PDF')
+        toastError(result?.error || 'Error al procesar el PDF')
         setPdfStep(0)
       }
     } catch (err: any) {
@@ -340,7 +345,7 @@ export default function Registro() {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
                   <Button variant="primary" className="!rounded-full px-8 py-3 text-[10px] font-black uppercase tracking-widest" onClick={() => setPdfStep(0)}>Importar Otro</Button>
-                  <Button variant="secondary" className="!rounded-full px-8 py-3 text-[10px] font-black uppercase tracking-widest" onClick={() => setTab('manual')}>Ir al Resumen</Button>
+                  <Button variant="secondary" className="!rounded-full px-8 py-3 text-[10px] font-black uppercase tracking-widest" onClick={() => navigate('/')}>Ir al Resumen</Button>
                 </div>
               </div>
             ) : (
@@ -368,7 +373,9 @@ export default function Registro() {
                     setIsUploading(true)
                     try {
                       const result = await electron.parseAndSavePDF(filePath)
-                      if (result.success) {
+                      if (result && result.isError) {
+                        toastError(`${result.message} (Ref: ${result.ref})`)
+                      } else if (result && result.success) {
                         setParsedTransactions([{ message: `
                           ✓ Banco: ${result.bank}
                           ✓ Cuenta: ${result.accountName}
@@ -377,8 +384,9 @@ export default function Registro() {
                         ` }])
                         setPdfStep(3)
                         success('Estado de cuenta procesado')
+                        if (refreshData) refreshData()
                       } else {
-                        toastError(result.error || 'Error al procesar el archivo')
+                        toastError(result?.error || 'Error al procesar el archivo')
                       }
                     } catch (err: any) {
                       toastError(err.message || 'Error crítico')

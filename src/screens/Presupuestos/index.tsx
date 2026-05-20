@@ -1,13 +1,15 @@
 import { useState, useMemo } from 'react'
 import { useApp } from '../../context/AppContext'
-import { Button, Card, ProgressBar, Modal, Input, Toggle, Badge, EmptyState } from '../../components/ui'
-import { formatMXN, formatMXNShort, CATEGORY_ICONS, CATEGORY_LABELS, CATEGORY_COLORS, getBudgetStatus, Budget } from '../../types'
+import { Button, Card, ProgressBar, Modal, Input, Toggle, Badge, EmptyState, Drawer } from '../../components/ui'
+import { formatMXN, formatMXNShort, CATEGORY_ICONS, CATEGORY_LABELS, CATEGORY_COLORS, getBudgetStatus, Budget, type CategoryId } from '../../types'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { useToast } from '../../context/ToastContext'
 
 export default function Presupuestos() {
-  const { budgets, transactions, updateBudget } = useApp()
-  const { success } = useToast()
+  const { budgets, transactions, addBudget, updateBudget, deleteBudget, refreshData } = useApp()
+  const { success, error: toastError } = useToast()
+
+  const currentPeriod = useMemo(() => new Date().toISOString().slice(0, 7), [])
 
   const { totalLimit, totalSpent } = useMemo(() => {
     return budgets.reduce((acc, b) => ({
@@ -19,7 +21,7 @@ export default function Presupuestos() {
   const globalPct = totalLimit > 0 ? totalSpent / totalLimit : 0
   const globalColor = globalPct > 0.9 ? '#EF4444' : globalPct > 0.7 ? '#F59E0B' : '#10B981'
 
-  // Proyección simple lineal (asumiendo gasto constante)
+  // Simple linear projection (assuming constant spending speed)
   const today = new Date()
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
   const currentDay = today.getDate()
@@ -34,22 +36,111 @@ export default function Presupuestos() {
     setEditLimit(b.monthlyLimit.toString())
   }
 
-  const handleSaveLimit = () => {
+  const handleSaveLimit = async () => {
     if (selectedBudget && editLimit) {
       const num = Number(editLimit)
       if (!isNaN(num) && num >= 0) {
-        updateBudget(selectedBudget.id, { monthlyLimit: num })
-        success('Límite de presupuesto actualizado')
-        setSelectedBudget(null)
+        try {
+          await updateBudget(selectedBudget.id, { monthlyLimit: num })
+          success('Límite de presupuesto actualizado')
+          setSelectedBudget(null)
+          await refreshData()
+        } catch (err: any) {
+          toastError(err.message || 'Error al actualizar el límite')
+        }
       }
     }
   }
 
-  // Datos para gráfica de selectedBudget
+  const handleDeleteBudget = async (id: string) => {
+    if (confirm('¿Estás seguro de eliminar este límite de presupuesto?')) {
+      try {
+        await deleteBudget(id)
+        success('Límite de presupuesto eliminado')
+        setSelectedBudget(null)
+        await refreshData()
+      } catch (err: any) {
+        toastError(err.message || 'Error al eliminar el presupuesto')
+      }
+    }
+  }
+
+  // --- CREATE BUDGET DRAWER ---
+  const [isAddOpen, setIsAddOpen] = useState(false)
+  const [newCategory, setNewCategory] = useState<CategoryId>('alimentacion')
+  const [newLimit, setNewLimit] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleCreateBudget = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newLimit || isNaN(Number(newLimit)) || Number(newLimit) <= 0) {
+      toastError('Por favor introduce un límite mensual válido')
+      return
+    }
+
+    // Check if budget for this category and period already exists
+    const exists = budgets.some(b => b.category === newCategory)
+    if (exists) {
+      toastError('Ya existe un presupuesto para esta categoría este mes. Puedes editarlo directamente.')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      await addBudget({
+        category: newCategory,
+        monthlyLimit: Number(newLimit),
+        period: currentPeriod,
+        spent: 0
+      })
+      success('Límite de presupuesto registrado exitosamente')
+      setIsAddOpen(false)
+      setNewLimit('')
+      await refreshData()
+    } catch (err: any) {
+      toastError(err.message || 'Error al guardar el presupuesto')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // --- TEMPLATE CLONING ---
+  const handleCloneDefaultTemplate = async () => {
+    try {
+      const defaults = [
+        { category: 'alimentacion', limit: 6000 },
+        { category: 'servicios', limit: 3000 },
+        { category: 'hogar', limit: 5000 },
+        { category: 'transporte', limit: 2000 },
+        { category: 'entretenimiento', limit: 1500 },
+        { category: 'otros', limit: 1000 }
+      ]
+      
+      setIsSubmitting(true)
+      for (const item of defaults) {
+        // Skip if already exists
+        if (budgets.some(b => b.category === item.category)) continue
+        
+        await addBudget({
+          category: item.category as CategoryId,
+          monthlyLimit: item.limit,
+          period: currentPeriod,
+          spent: 0
+        })
+      }
+      success('Límites recomendados inicializados correctamente')
+      await refreshData()
+    } catch (err: any) {
+      toastError(err.message || 'Error al clonar plantilla')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Cumulative graph for selected category
   const chartData = useMemo(() => {
     if (!selectedBudget) return []
     const txs = transactions.filter(t => t.category === selectedBudget.category && t.date.startsWith(selectedBudget.period))
-    // Generar 1 al currentDay
     let cumulative = 0
     return Array.from({ length: currentDay || 1 }, (_, i) => {
       const dayStr = `${selectedBudget.period}-${String(i + 1).padStart(2, '0')}`
@@ -71,9 +162,32 @@ export default function Presupuestos() {
       .slice(0, 8)
   }, [selectedBudget, transactions])
 
+  // Category history calculated dynamically from SQLite transaction aggregates
+  const categoryHistory = useMemo(() => {
+    if (!selectedBudget) return []
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    const history = []
+    
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(today.getMonth() - i)
+      const mStr = d.toISOString().slice(0, 7)
+      const monthLabel = monthNames[d.getMonth()]
+      
+      const spent = transactions
+        .filter(t => t.category === selectedBudget.category && t.date.startsWith(mStr) && t.type === 'gasto')
+        .reduce((sum, t) => sum + t.amount, 0)
+        
+      const status = spent > selectedBudget.monthlyLimit ? 'danger' : spent > selectedBudget.monthlyLimit * 0.7 ? 'warning' : 'ok'
+      
+      history.push({ month: monthLabel, spent, status })
+    }
+    return history
+  }, [selectedBudget, transactions, today])
+
   // --- GASTOS HORMIGA ---
   const [hormigaThreshold, setHormigaThreshold] = useState(200)
-  const [hormigaDailyLimit, setHormigaDailyLimit] = useState(231)
+  const [hormigaDailyLimit, setHormigaDailyLimit] = useState(230)
   
   const hormigaData = useMemo(() => {
     const todayStr = today.toISOString().split('T')[0]
@@ -87,7 +201,7 @@ export default function Presupuestos() {
     const monthTotal = monthHormiga.reduce((acc, t) => acc + t.amount, 0)
     
     return { todayHormiga, todayTotal, monthTotal, monthLimit: hormigaDailyLimit * currentDay }
-  }, [transactions, hormigaThreshold, hormigaDailyLimit, currentDay])
+  }, [transactions, hormigaThreshold, hormigaDailyLimit, currentDay, today])
 
   return (
     <div className="space-y-12 animate-fade-in pb-12">
@@ -101,137 +215,137 @@ export default function Presupuestos() {
           </h1>
         </div>
         <div className="flex gap-4">
-          <Button variant="secondary" className="!rounded-full !px-8 opacity-60 hover:opacity-100 transition-opacity">
-            Histórico
-          </Button>
-          <Button onClick={() => {}} className="!rounded-full !px-8 shadow-luster">
-            <span className="material-symbols-outlined text-lg">add</span>
+          <Button onClick={() => setIsAddOpen(true)} className="!rounded-full !px-8 shadow-luster">
+            <span className="material-symbols-outlined text-lg mr-1">add</span>
             Nuevo Límite
           </Button>
         </div>
       </div>
 
-      {/* Global Hero Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-        <div className="lg:col-span-5 space-y-8">
-          <div className="space-y-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-60">Gasto Acumulado en Periodo</p>
-            <p className="text-6xl lg:text-7xl font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tighter tabular-nums">
-              {formatMXN(totalSpent)}
+      {budgets.length === 0 ? (
+        /* Empty State Premium: Subtle radial distribution lines */
+        <div className="depth-1 p-16 rounded-[3rem] text-center max-w-2xl mx-auto space-y-8 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none group-hover:bg-primary/10 transition-colors" />
+          
+          <div className="w-24 h-24 rounded-full bg-atelier-bg-3-light dark:bg-atelier-bg-3-dark flex items-center justify-center mx-auto shadow-inner relative group-hover:scale-105 transition-transform duration-500">
+            {/* Subtle radial distribution lines visualization */}
+            <svg className="w-16 h-16 text-primary/30 animate-pulse" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 6" />
+              <circle cx="50" cy="50" r="25" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 4" />
+              <line x1="50" y1="10" x2="50" y2="90" stroke="currentColor" strokeWidth="1" strokeDasharray="1 3" />
+              <line x1="10" y1="50" x2="90" y2="50" stroke="currentColor" strokeWidth="1" strokeDasharray="1 3" />
+            </svg>
+          </div>
+
+          <div className="space-y-3">
+            <h2 className="text-2xl font-black text-atelier-text-main-light dark:text-atelier-text-main-dark uppercase tracking-tight">Configure sus límites mensuales</h2>
+            <p className="text-sm text-atelier-text-main-light dark:text-atelier-text-main-dark italic opacity-70">
+              Defina las cotas para cada categoría de egreso real
+            </p>
+            <p className="text-xs text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-50 max-w-md mx-auto leading-relaxed">
+              No se han encontrado presupuestos activos para este periodo. FYN te permite asignar límites a tus consumos por categoría para vigilar desviaciones e identificar fugas de flujo de caja en tiempo real.
             </p>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">Límite Global</span>
-              <span className="text-lg font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark opacity-80">{formatMXN(totalLimit)}</span>
-            </div>
-            <div className="h-8 w-px bg-primary/10" />
-            <div className="flex flex-col">
-              <span className="text-[9px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">Proyección</span>
-              <span className={`text-lg font-bold tabular-nums ${projectedSpent > totalLimit ? 'text-danger' : 'text-primary'}`}>
-                {formatMXN(projectedSpent)}
-              </span>
-            </div>
+
+          <div className="pt-4 flex flex-col sm:flex-row gap-4 justify-center">
+            <Button onClick={handleCloneDefaultTemplate} variant="secondary" className="!rounded-full px-8 py-3.5 !text-[10px] font-black uppercase tracking-widest" disabled={isSubmitting}>
+              <span className="material-symbols-outlined text-base mr-2">auto_awesome</span> Inicializar Plantilla Recomendada
+            </Button>
+            <Button onClick={() => setIsAddOpen(true)} className="!rounded-full px-8 py-3.5 !text-[10px] font-black uppercase tracking-widest shadow-luster" disabled={isSubmitting}>
+              <span className="material-symbols-outlined text-base mr-2">add</span> Configurar Límite Manual
+            </Button>
           </div>
         </div>
+      ) : (
+        <>
+          {/* Global Hero Summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+            <div className="lg:col-span-5 space-y-8">
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.4em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-60">Gasto Acumulado en Periodo</p>
+                <p className="text-6xl lg:text-7xl font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tighter tabular-nums">
+                  {formatMXN(totalSpent)}
+                </p>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">Límite Global</span>
+                  <span className="text-lg font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark opacity-80">{formatMXN(totalLimit)}</span>
+                </div>
+                <div className="h-8 w-px bg-primary/10" />
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">Proyección</span>
+                  <span className={`text-lg font-bold tabular-nums ${projectedSpent > totalLimit ? 'text-danger' : 'text-primary'}`}>
+                    {formatMXN(projectedSpent)}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-        <div className="lg:col-span-7 flex flex-col justify-end space-y-4">
-           <div className="flex justify-between items-end mb-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark">Rendimiento Presupuestal</span>
-              <span className="text-2xl font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tabular-nums">{Math.round(globalPct * 100)}%</span>
-           </div>
-           <div className="h-4 w-full depth-1 rounded-full overflow-hidden p-1">
-             <div 
-               className="h-full rounded-full transition-all duration-1000 ease-out shadow-luster"
-               style={{ 
-                 width: `${Math.min(globalPct * 100, 100)}%`,
-                 backgroundColor: globalColor
-               }}
-             />
-           </div>
-           <p className="text-[10px] font-bold text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 italic">
-             {projectedSpent > totalLimit ? 'Precaución: La proyección indica una desviación del presupuesto.' : 'Optimización: Los gastos se mantienen dentro de los parámetros esperados.'}
-           </p>
-        </div>
-      </div>
+            <div className="lg:col-span-7 flex flex-col justify-end space-y-4">
+               <div className="flex justify-between items-end mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark">Rendimiento Presupuestal</span>
+                  <span className="text-2xl font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tabular-nums">{Math.round(globalPct * 100)}%</span>
+               </div>
+               <div className="h-4 w-full depth-1 rounded-full overflow-hidden p-1">
+                 <div 
+                   className="h-full rounded-full transition-all duration-1000 ease-out shadow-luster"
+                   style={{ 
+                     width: `${Math.min(globalPct * 100, 100)}%`,
+                     backgroundColor: globalColor
+                   }}
+                 />
+               </div>
+               <p className="text-[10px] font-bold text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40 italic">
+                 {projectedSpent > totalLimit ? 'Precaución: La proyección indica una desviación del presupuesto.' : 'Optimización: Los gastos se mantienen dentro de los parámetros esperados.'}
+               </p>
+            </div>
+          </div>
 
-      {/* Categorías List Layout */}
-      <div className="space-y-10 pt-8">
-        <h2 className="text-xs font-black uppercase tracking-[0.3em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-60">Desglose por División Técnica</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12">
-          {budgets.map(b => {
-            const status = getBudgetStatus(b)
-            const color = status === 'ok' ? '#10B981' : status === 'warning' ? '#F59E0B' : '#EF4444'
-            const pct = Math.min((b.spent / b.monthlyLimit) * 100, 100)
+          {/* Categorías List Layout */}
+          <div className="space-y-10 pt-8">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-60">Desglose por División Técnica</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12">
+              {budgets.map(b => {
+                const status = getBudgetStatus(b)
+                const color = status === 'ok' ? '#10B981' : status === 'warning' ? '#F59E0B' : '#EF4444'
+                const pct = Math.min((b.spent / b.monthlyLimit) * 100, 100)
 
-            return (
-              <div key={b.id} onClick={() => handleOpenDetail(b)} className="group cursor-pointer space-y-4 active:scale-[0.98] transition-all">
-                <div className="flex justify-between items-end">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full depth-1 flex items-center justify-center group-hover:depth-2 transition-all">
-                      <span className="material-symbols-outlined text-xl" style={{ color }}>{CATEGORY_ICONS[b.category]}</span>
+                return (
+                  <div key={b.id} onClick={() => handleOpenDetail(b)} className="group cursor-pointer space-y-4 active:scale-[0.98] transition-all">
+                    <div className="flex justify-between items-end">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full depth-1 flex items-center justify-center group-hover:depth-2 transition-all">
+                          <span className="material-symbols-outlined text-xl" style={{ color }}>{CATEGORY_ICONS[b.category]}</span>
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tight uppercase">{CATEGORY_LABELS[b.category]}</h3>
+                          <p className="text-[10px] font-black text-atelier-text-muted-light dark:text-atelier-text-muted-dark uppercase tracking-widest opacity-40 mt-0.5">{formatMXNShort(b.monthlyLimit)} Límite</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tabular-nums tracking-tighter">{formatMXNShort(b.spent)}</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest" style={{ color }}>{Math.round(pct)}% Utilizado</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tight uppercase">{CATEGORY_LABELS[b.category]}</h3>
-                      <p className="text-[10px] font-black text-atelier-text-muted-light dark:text-atelier-text-muted-dark uppercase tracking-widest opacity-40 mt-0.5">{formatMXNShort(b.monthlyLimit)} Límite</p>
+                    <div className="h-1.5 w-full bg-atelier-bg-3-light dark:bg-atelier-bg-3-dark rounded-full overflow-hidden">
+                      <div 
+                        className="h-full rounded-full transition-all duration-700 ease-out"
+                        style={{ 
+                          width: `${pct}%`,
+                          backgroundColor: color,
+                          opacity: status === 'ok' ? 0.6 : 1
+                        }}
+                      />
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tabular-nums tracking-tighter">{formatMXNShort(b.spent)}</p>
-                    <p className="text-[9px] font-black uppercase tracking-widest" style={{ color }}>{Math.round(pct)}% Utilizado</p>
-                  </div>
-                </div>
-                <div className="h-1.5 w-full bg-atelier-bg-3-light dark:bg-atelier-bg-3-dark rounded-full overflow-hidden">
-                  <div 
-                    className="h-full rounded-full transition-all duration-700 ease-out"
-                    style={{ 
-                      width: `${pct}%`,
-                      backgroundColor: color,
-                      opacity: status === 'ok' ? 0.6 : 1
-                    }}
-                  />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Gastos Amortizados Editorial */}
-      <div className="space-y-8 pt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-60">Provisiones Anuales Amortizadas</h2>
-          <Button variant="secondary" className="!rounded-full !px-6 !text-[10px] uppercase font-black tracking-widest">+ Provisión</Button>
-        </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {[
-            { name: 'Predial', freq: 'Anual', amount: 3000, monthly: 250, next: 'Ene 15' },
-            { name: 'Seguro Auto', freq: 'Anual', amount: 8400, monthly: 700, next: 'Ago 10' },
-            { name: 'Seguro Médico', freq: 'Semestral', amount: 9000, monthly: 1500, next: 'Jun 01' }
-          ].map((gasto, i) => (
-            <Card key={i} className="group p-8 space-y-8 relative overflow-hidden !rounded-[2.5rem] hover:!depth-2">
-              <div className="flex justify-between items-start">
-                <div className="space-y-1">
-                  <p className="text-lg font-bold text-atelier-text-main-light dark:text-atelier-text-main-dark tracking-tight">{gasto.name}</p>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">{gasto.freq}</p>
-                </div>
-                <Toggle checked={true} onChange={() => {}} />
-              </div>
-              
-              <div className="space-y-1">
-                <p className="text-[9px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">Impacto Mensual</p>
-                <p className="text-3xl font-black text-atelier-text-main-light dark:text-atelier-text-main-dark tabular-nums tracking-tighter">{formatMXNShort(gasto.monthly)}</p>
-              </div>
-
-              <div className="pt-4 border-t border-primary/10 flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark opacity-40">Próximo Pago:</span>
-                <span className="text-[10px] font-black text-atelier-text-main-light dark:text-atelier-text-main-dark uppercase tracking-widest">{gasto.next}</span>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Control Micro-Gastos (Hormiga) Technical Panel */}
       <div className="pt-12">
@@ -291,27 +405,37 @@ export default function Presupuestos() {
         </div>
       </div>
 
-      {/* MODAL DETALLE DE CATEGORÍA */}
+      {/* DETAIL MODAL */}
       <Modal isOpen={!!selectedBudget} onClose={() => setSelectedBudget(null)} title="Detalle de Categoría" size="lg">
         {selectedBudget && (
           <div className="space-y-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${getBudgetStatus(selectedBudget) === 'ok' ? '#10B981' : getBudgetStatus(selectedBudget) === 'warning' ? '#F59E0B' : '#EF4444'}15`, color: getBudgetStatus(selectedBudget) === 'ok' ? '#10B981' : getBudgetStatus(selectedBudget) === 'warning' ? '#F59E0B' : '#EF4444' }}>
-                <span className="material-symbols-outlined text-2xl">{CATEGORY_ICONS[selectedBudget.category]}</span>
-              </div>
-              <div>
-                <h3 className="font-bold text-xl text-light-text dark:text-dark-text capitalize">{CATEGORY_LABELS[selectedBudget.category]}</h3>
-                <div className="flex items-center gap-2 text-sm mt-0.5">
-                  <span className="font-bold text-light-text dark:text-dark-text">{formatMXN(selectedBudget.spent)}</span>
-                  <span className="text-light-text-2 dark:text-dark-text-2">/ {formatMXN(selectedBudget.monthlyLimit)}</span>
-                  <Badge variant={getBudgetStatus(selectedBudget) === 'ok' ? 'success' : getBudgetStatus(selectedBudget) === 'warning' ? 'warning' : 'danger'}>
-                    {getBudgetStatus(selectedBudget)}
-                  </Badge>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${getBudgetStatus(selectedBudget) === 'ok' ? '#10B981' : getBudgetStatus(selectedBudget) === 'warning' ? '#F59E0B' : '#EF4444'}15`, color: getBudgetStatus(selectedBudget) === 'ok' ? '#10B981' : getBudgetStatus(selectedBudget) === 'warning' ? '#F59E0B' : '#EF4444' }}>
+                  <span className="material-symbols-outlined text-2xl">{CATEGORY_ICONS[selectedBudget.category]}</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-xl text-light-text dark:text-dark-text capitalize">{CATEGORY_LABELS[selectedBudget.category]}</h3>
+                  <div className="flex items-center gap-2 text-sm mt-0.5">
+                    <span className="font-bold text-light-text dark:text-dark-text">{formatMXN(selectedBudget.spent)}</span>
+                    <span className="text-light-text-2 dark:text-dark-text-2">/ {formatMXN(selectedBudget.monthlyLimit)}</span>
+                    <Badge variant={getBudgetStatus(selectedBudget) === 'ok' ? 'success' : getBudgetStatus(selectedBudget) === 'warning' ? 'warning' : 'danger'}>
+                      {getBudgetStatus(selectedBudget)}
+                    </Badge>
+                  </div>
                 </div>
               </div>
+              
+              <button 
+                onClick={() => handleDeleteBudget(selectedBudget.id)} 
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-danger/10 hover:bg-danger text-danger hover:text-white transition-all cursor-pointer"
+                title="Eliminar Presupuesto"
+              >
+                <span className="material-symbols-outlined text-xl">delete</span>
+              </button>
             </div>
 
-            {/* SECCIÓN A: Gráfica Acumulada */}
+            {/* SECCIÓN A: Cumulative Graph */}
             <div className="h-[200px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
@@ -325,7 +449,7 @@ export default function Presupuestos() {
               </ResponsiveContainer>
             </div>
 
-            {/* SECCIÓN B: Editar Límite */}
+            {/* SECCIÓN B: Edit Limit */}
             <div className="flex items-end gap-3 bg-light-surface dark:bg-dark-surface p-4 rounded-card">
                <div className="flex-1">
                  <Input label="Límite mensual" type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} />
@@ -333,16 +457,12 @@ export default function Presupuestos() {
                <Button onClick={handleSaveLimit}>Guardar</Button>
             </div>
 
-            {/* SECCIÓN C: Historial (mock) */}
+            {/* SECCIÓN C: History calculated dynamically */}
             <div>
               <p className="text-sm font-semibold mb-2">Historial reciente</p>
               <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                {[
-                  { month: 'Enero', spent: selectedBudget.monthlyLimit * 0.9, status: 'ok' },
-                  { month: 'Febrero', spent: selectedBudget.monthlyLimit * 1.1, status: 'danger' },
-                  { month: 'Marzo', spent: selectedBudget.spent, status: getBudgetStatus(selectedBudget) }
-                ].map((m, i) => (
-                  <div key={i} className="flex-shrink-0 border border-light-border dark:border-dark-border px-3 py-2 rounded-card text-xs flex flex-col items-center min-w-[80px]">
+                {categoryHistory.map((m, i) => (
+                  <div key={i} className="flex-shrink-0 border border-light-border dark:border-dark-border px-3 py-2 rounded-card text-xs flex flex-col items-center min-w-[100px]">
                     <span className="text-light-text-2 dark:text-dark-text-2 mb-1">{m.month}</span>
                     <span className="font-bold mb-1">{formatMXN(m.spent)}</span>
                     <Badge variant={m.status as any}>{m.status}</Badge>
@@ -351,7 +471,7 @@ export default function Presupuestos() {
               </div>
             </div>
 
-            {/* SECCIÓN D: Transacciones */}
+            {/* SECCIÓN D: Real Transactions list */}
             <div>
                <p className="text-sm font-semibold mb-2">Transacciones este mes</p>
                {categoryTxs.length === 0 ? (
@@ -375,6 +495,51 @@ export default function Presupuestos() {
         )}
       </Modal>
 
+      {/* NEW BUDGET DRAWER */}
+      <Drawer isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} title="Registrar Límite" width={420}>
+        <form onSubmit={handleCreateBudget} className="space-y-6 p-4">
+          <p className="text-xs text-light-text-2 dark:text-dark-text-2 mb-4 leading-relaxed">
+            Asigna un límite mensual a una categoría específica para monitorear en tiempo real tus desviaciones de capital.
+          </p>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-widest text-atelier-text-muted-light dark:text-atelier-text-muted-dark ml-1">Categoría</label>
+            <select
+              value={newCategory}
+              onChange={e => setNewCategory(e.target.value as CategoryId)}
+              className="w-full depth-1 rounded-2xl px-4 py-3 text-sm text-atelier-text-main-light dark:text-atelier-text-main-dark bg-light-surface dark:bg-dark-surface border-2 border-transparent focus:border-primary/20 focus:outline-none focus:depth-2 focus:shadow-luster transition-all duration-300"
+            >
+              {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <Input 
+            label="Límite Mensual ($)" 
+            type="number"
+            placeholder="Ej. 5000" 
+            value={newLimit} 
+            onChange={e => setNewLimit(e.target.value)} 
+          />
+
+          <div className="pt-8">
+            <Button type="submit" size="lg" className="w-full justify-center h-14" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <span className="animate-spin material-symbols-outlined mr-2">progress_activity</span>
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined mr-2">save</span>
+                  Guardar Límite
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </Drawer>
     </div>
   )
 }

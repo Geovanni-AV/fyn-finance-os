@@ -85,7 +85,7 @@ export default function Terminal() {
         <div className="bg-[#1a1a1b] px-4 py-1.5 flex justify-between items-center text-[9px] font-bold text-white/40 uppercase tracking-widest">
           <div className="flex gap-4">
             <span>STATUS: ACTIVE</span>
-            <span>MEM: {Math.round(performance.memory?.usedJSHeapSize / 1024 / 1024 || 0)}MB</span>
+            <span>MEM: {Math.round((performance as any).memory?.usedJSHeapSize / 1024 / 1024 || 0)}MB</span>
           </div>
           <div className="flex gap-2 items-center">
             <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />

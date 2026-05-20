@@ -1,23 +1,25 @@
-import { app, BrowserWindow, ipcMain } from "electron";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import Database from "better-sqlite3";
-let dbInstance = null;
-function getDatabase(dbPath) {
-  if (dbInstance) return dbInstance;
-  const finalPath = dbPath || "fyn-finance.sqlite";
-  dbInstance = new Database(finalPath, {
+var q = Object.defineProperty;
+var J = (l, t, e) => t in l ? q(l, t, { enumerable: !0, configurable: !0, writable: !0, value: e }) : l[t] = e;
+var G = (l, t, e) => J(l, typeof t != "symbol" ? t + "" : t, e);
+import { app as U, BrowserWindow as j, ipcMain as Q } from "electron";
+import L from "node:path";
+import { fileURLToPath as z } from "node:url";
+import { createRequire as Z } from "node:module";
+import ee from "better-sqlite3";
+import v from "node:fs";
+let M = null;
+function te(l) {
+  if (M) return M;
+  const t = l || "fyn-finance.sqlite";
+  return M = new ee(t, {
     verbose: console.log
-  });
-  dbInstance.exec(`
+  }), M.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
-  `);
-  return dbInstance;
+  `), M;
 }
-function initSchema(db) {
-  db.exec(`
+function re(l) {
+  l.exec(`
     -- PROFILES
     CREATE TABLE IF NOT EXISTS profiles (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -153,644 +155,628 @@ function initSchema(db) {
     );
   `);
 }
-function seedDatabase(db) {
-  console.log("Database ready for user data.");
-}
-class ProfileRepository {
-  constructor(db) {
-    this.db = db;
+class ne {
+  constructor(t) {
+    this.db = t;
   }
   getProfile() {
-    const row = this.db.prepare("SELECT * FROM profiles LIMIT 1").get();
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      email: row.email,
-      currency: row.currency,
-      theme: row.theme,
-      onboardingDone: Boolean(row.onboarding_done)
+    const t = this.db.prepare("SELECT * FROM profiles LIMIT 1").get();
+    return t ? {
+      id: t.id,
+      name: t.name,
+      email: t.email,
+      currency: t.currency,
+      theme: t.theme,
+      onboardingDone: !!t.onboarding_done
+    } : null;
+  }
+  createProfile(t) {
+    const e = t.id || `usr_${Math.random().toString(36).substring(2, 11)}`, r = t.name || "Usuario", a = t.email || "", i = t.currency || "MXN", g = t.theme || "dark", h = t.onboardingDone ? 1 : 0;
+    return this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO profiles (id, name, email, currency, theme, onboarding_done)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(e, r, a, i, g, h), this.db.prepare(`
+        INSERT INTO alert_settings (
+          user_id, presupuesto_alerta, presupuesto_excedido, 
+          pago_proximo, pago_vencido, meta_lograda, 
+          saldo_bajo, gasto_inusual, racha_ahorro, resumen_semanal
+        ) VALUES (?, 1, 1, 1, 1, 1, 1, 0, 1, 0)
+      `).run(e);
+    })(), e;
+  }
+  updateProfile(t) {
+    if (!t.id) return;
+    const e = [], r = [];
+    if (t.name && (e.push("name = ?"), r.push(t.name)), t.email && (e.push("email = ?"), r.push(t.email)), t.currency && (e.push("currency = ?"), r.push(t.currency)), t.theme && (e.push("theme = ?"), r.push(t.theme)), t.onboardingDone !== void 0 && (e.push("onboarding_done = ?"), r.push(t.onboardingDone ? 1 : 0)), e.length === 0) return;
+    r.push(t.id);
+    const a = `UPDATE profiles SET ${e.join(", ")} WHERE id = ?`;
+    this.db.prepare(a).run(...r);
+  }
+  getAlertSettings(t) {
+    const e = this.db.prepare("SELECT * FROM alert_settings WHERE user_id = ?").get(t);
+    return e ? {
+      presupuestoAlerta: !!e.presupuesto_alerta,
+      presupuestoExcedido: !!e.presupuesto_excedido,
+      pagoProximo: !!e.pago_proximo,
+      pagoVencido: !!e.pago_vencido,
+      metaLograda: !!e.meta_lograda,
+      saldoBajo: !!e.saldo_bajo,
+      gastoInusual: !!e.gasto_inusual,
+      rachaAhorro: !!e.racha_ahorro,
+      resumenSemanal: !!e.resumen_semanal
+    } : null;
+  }
+  updateAlertSettings(t, e) {
+    const r = [], a = [], i = {
+      presupuestoAlerta: "presupuesto_alerta",
+      presupuestoExcedido: "presupuesto_excedido",
+      pagoProximo: "pago_proximo",
+      pagoVencido: "pago_vencido",
+      metaLograda: "meta_lograda",
+      saldoBajo: "saldo_bajo",
+      gastoInusual: "gasto_inusual",
+      rachaAhorro: "racha_ahorro",
+      resumenSemanal: "resumen_semanal"
     };
-  }
-  createProfile(profile) {
-    const id = profile.id || void 0;
-    const name = profile.name || "Usuario";
-    const email = profile.email || "";
-    const currency = profile.currency || "MXN";
-    const theme = profile.theme || "dark";
-    const onboardingDone = profile.onboardingDone ? 1 : 0;
-    const stmt = this.db.prepare(`
-      INSERT INTO profiles (id, name, email, currency, theme, onboarding_done)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    const info = stmt.run(id, name, email, currency, theme, onboardingDone);
-    return id || info.lastInsertRowid;
-  }
-  updateProfile(profile) {
-    if (!profile.id) return;
-    const fields = [];
-    const params = [];
-    if (profile.name) {
-      fields.push("name = ?");
-      params.push(profile.name);
-    }
-    if (profile.email) {
-      fields.push("email = ?");
-      params.push(profile.email);
-    }
-    if (profile.currency) {
-      fields.push("currency = ?");
-      params.push(profile.currency);
-    }
-    if (profile.theme) {
-      fields.push("theme = ?");
-      params.push(profile.theme);
-    }
-    if (profile.onboardingDone !== void 0) {
-      fields.push("onboarding_done = ?");
-      params.push(profile.onboardingDone ? 1 : 0);
-    }
-    if (fields.length === 0) return;
-    params.push(profile.id);
-    const sql = `UPDATE profiles SET ${fields.join(", ")} WHERE id = ?`;
-    this.db.prepare(sql).run(...params);
+    for (const h of Object.keys(i))
+      e[h] !== void 0 && (r.push(`${i[h]} = ?`), a.push(e[h] ? 1 : 0));
+    if (r.length === 0) return;
+    a.push(t);
+    const g = `UPDATE alert_settings SET ${r.join(", ")} WHERE user_id = ?`;
+    this.db.prepare(g).run(...a);
   }
 }
-class AccountRepository {
-  constructor(db) {
-    this.db = db;
+class ae {
+  constructor(t) {
+    this.db = t;
   }
-  getAll(userId) {
-    const rows = this.db.prepare("SELECT * FROM accounts WHERE user_id = ?").all(userId);
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      bank: row.bank,
-      type: row.type,
-      balance: row.balance,
-      creditLimit: row.credit_limit,
-      currency: row.currency,
-      color: row.color,
-      lastFour: row.last_four,
-      isActive: Boolean(row.is_active)
+  getAll(t) {
+    return this.db.prepare("SELECT * FROM accounts WHERE user_id = ?").all(t).map((r) => ({
+      id: r.id,
+      name: r.name,
+      bank: r.bank,
+      type: r.type,
+      balance: r.balance,
+      creditLimit: r.credit_limit,
+      currency: r.currency,
+      color: r.color,
+      lastFour: r.last_four,
+      isActive: !!r.is_active
     }));
   }
-  create(userId, account) {
-    const id = account.id || void 0;
-    const stmt = this.db.prepare(`
+  create(t, e) {
+    const r = e.id || void 0;
+    return this.db.prepare(`
       INSERT INTO accounts (id, user_id, name, bank, type, balance, credit_limit, currency, color, last_four, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      id,
-      userId,
-      account.name,
-      account.bank,
-      account.type,
-      account.balance || 0,
-      account.creditLimit || null,
-      account.currency || "MXN",
-      account.color || "#2563EB",
-      account.lastFour || null,
-      account.isActive !== false ? 1 : 0
-    );
-    return id || "unknown";
+      RETURNING id
+    `).get(
+      r,
+      t,
+      e.name,
+      e.bank,
+      e.type,
+      e.balance || 0,
+      e.creditLimit || null,
+      e.currency || "MXN",
+      e.color || "#2563EB",
+      e.lastFour || null,
+      e.isActive !== !1 ? 1 : 0
+    ).id;
   }
-  update(id, updates) {
-    const fields = [];
-    const params = [];
-    if (updates.name) {
-      fields.push("name = ?");
-      params.push(updates.name);
-    }
-    if (updates.bank) {
-      fields.push("bank = ?");
-      params.push(updates.bank);
-    }
-    if (updates.type) {
-      fields.push("type = ?");
-      params.push(updates.type);
-    }
-    if (updates.balance !== void 0) {
-      fields.push("balance = ?");
-      params.push(updates.balance);
-    }
-    if (updates.creditLimit !== void 0) {
-      fields.push("credit_limit = ?");
-      params.push(updates.creditLimit);
-    }
-    if (updates.currency) {
-      fields.push("currency = ?");
-      params.push(updates.currency);
-    }
-    if (updates.color) {
-      fields.push("color = ?");
-      params.push(updates.color);
-    }
-    if (updates.lastFour) {
-      fields.push("last_four = ?");
-      params.push(updates.lastFour);
-    }
-    if (updates.isActive !== void 0) {
-      fields.push("is_active = ?");
-      params.push(updates.isActive ? 1 : 0);
-    }
-    if (fields.length === 0) return;
-    params.push(id);
-    const sql = `UPDATE accounts SET ${fields.join(", ")} WHERE id = ?`;
-    this.db.prepare(sql).run(...params);
+  update(t, e) {
+    const r = [], a = [];
+    if (e.name && (r.push("name = ?"), a.push(e.name)), e.bank && (r.push("bank = ?"), a.push(e.bank)), e.type && (r.push("type = ?"), a.push(e.type)), e.balance !== void 0 && (r.push("balance = ?"), a.push(e.balance)), e.creditLimit !== void 0 && (r.push("credit_limit = ?"), a.push(e.creditLimit)), e.currency && (r.push("currency = ?"), a.push(e.currency)), e.color && (r.push("color = ?"), a.push(e.color)), e.lastFour && (r.push("last_four = ?"), a.push(e.lastFour)), e.isActive !== void 0 && (r.push("is_active = ?"), a.push(e.isActive ? 1 : 0)), r.length === 0) return;
+    a.push(t);
+    const i = `UPDATE accounts SET ${r.join(", ")} WHERE id = ?`;
+    this.db.prepare(i).run(...a);
   }
-  delete(id) {
-    this.db.prepare("DELETE FROM accounts WHERE id = ?").run(id);
+  delete(t) {
+    this.db.prepare("DELETE FROM accounts WHERE id = ?").run(t);
   }
 }
-class TransactionRepository {
-  constructor(db) {
-    this.db = db;
+class oe {
+  constructor(t) {
+    this.db = t;
   }
-  getAll(userId) {
-    const rows = this.db.prepare(`
+  getAll(t) {
+    return this.db.prepare(`
       SELECT * FROM transactions 
       WHERE user_id = ? 
       ORDER BY date DESC, created_at DESC
-    `).all(userId);
-    return rows.map((row) => ({
-      id: row.id,
-      date: row.date,
-      amount: row.amount,
-      type: row.type,
-      category: row.category,
-      description: row.description,
-      accountId: row.account_id,
-      source: row.source,
-      isRecurring: Boolean(row.is_recurring),
-      recurrencePeriod: row.recurrence_period,
-      tags: JSON.parse(row.tags || "[]"),
-      notes: row.notes
+    `).all(t).map((r) => ({
+      id: r.id,
+      date: r.date,
+      amount: r.amount,
+      type: r.type,
+      category: r.category,
+      description: r.description,
+      accountId: r.account_id,
+      source: r.source,
+      isRecurring: !!r.is_recurring,
+      recurrencePeriod: r.recurrence_period,
+      tags: JSON.parse(r.tags || "[]"),
+      notes: r.notes
     }));
   }
-  create(userId, tx) {
-    const id = tx.id || void 0;
-    const stmt = this.db.prepare(`
+  create(t, e) {
+    const r = e.id || void 0;
+    return this.db.prepare(`
       INSERT INTO transactions (id, user_id, account_id, date, amount, type, category, description, source, is_recurring, recurrence_period, tags, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      id,
-      userId,
-      tx.accountId,
-      tx.date,
-      tx.amount,
-      tx.type,
-      tx.category,
-      tx.description || "",
-      tx.source || "manual",
-      tx.isRecurring ? 1 : 0,
-      tx.recurrencePeriod || null,
-      JSON.stringify(tx.tags || []),
-      tx.notes || null
-    );
-    return id || "unknown";
+      RETURNING id
+    `).get(
+      r,
+      t,
+      e.accountId,
+      e.date,
+      e.amount,
+      e.type,
+      e.category,
+      e.description || "",
+      e.source || "manual",
+      e.isRecurring ? 1 : 0,
+      e.recurrencePeriod || null,
+      JSON.stringify(e.tags || []),
+      e.notes || null
+    ).id;
   }
-  delete(id) {
-    this.db.prepare("DELETE FROM transactions WHERE id = ?").run(id);
+  delete(t) {
+    this.db.prepare("DELETE FROM transactions WHERE id = ?").run(t);
   }
 }
-class BudgetRepository {
-  constructor(db) {
-    this.db = db;
+class se {
+  constructor(t) {
+    this.db = t;
   }
-  getAll(userId, period) {
-    const rows = this.db.prepare("SELECT * FROM budgets WHERE user_id = ? AND period = ?").all(userId, period);
-    return rows.map((row) => ({
-      id: row.id,
-      category: row.category,
-      monthlyLimit: row.monthly_limit,
-      period: row.period,
+  getAll(t, e) {
+    return this.db.prepare("SELECT * FROM budgets WHERE user_id = ? AND period = ?").all(t, e).map((a) => ({
+      id: a.id,
+      category: a.category,
+      monthlyLimit: a.monthly_limit,
+      period: a.period,
       spent: 0
       // In a real app we'd calculate this from transactions
     }));
   }
-  create(userId, budget) {
-    const id = budget.id || void 0;
-    const stmt = this.db.prepare(`
+  create(t, e) {
+    const r = e.id || void 0;
+    return this.db.prepare(`
       INSERT INTO budgets (id, user_id, category, monthly_limit, period)
       VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, userId, budget.category, budget.monthlyLimit, budget.period);
-    return id || "unknown";
+      RETURNING id
+    `).get(r, t, e.category, e.monthlyLimit, e.period).id;
   }
-  update(id, updates) {
-    const fields = [];
-    const params = [];
-    if (updates.category) {
-      fields.push("category = ?");
-      params.push(updates.category);
-    }
-    if (updates.monthlyLimit !== void 0) {
-      fields.push("monthly_limit = ?");
-      params.push(updates.monthlyLimit);
-    }
-    if (updates.period) {
-      fields.push("period = ?");
-      params.push(updates.period);
-    }
-    if (fields.length === 0) return;
-    params.push(id);
-    const sql = `UPDATE budgets SET ${fields.join(", ")} WHERE id = ?`;
-    this.db.prepare(sql).run(...params);
+  update(t, e) {
+    const r = [], a = [];
+    if (e.category && (r.push("category = ?"), a.push(e.category)), e.monthlyLimit !== void 0 && (r.push("monthly_limit = ?"), a.push(e.monthlyLimit)), e.period && (r.push("period = ?"), a.push(e.period)), r.length === 0) return;
+    a.push(t);
+    const i = `UPDATE budgets SET ${r.join(", ")} WHERE id = ?`;
+    this.db.prepare(i).run(...a);
   }
-  delete(id) {
-    this.db.prepare("DELETE FROM budgets WHERE id = ?").run(id);
+  delete(t) {
+    this.db.prepare("DELETE FROM budgets WHERE id = ?").run(t);
   }
 }
-class GoalRepository {
-  constructor(db) {
-    this.db = db;
+class ie {
+  constructor(t) {
+    this.db = t;
   }
-  getAll(userId) {
-    const rows = this.db.prepare("SELECT * FROM saving_goals WHERE user_id = ?").all(userId);
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      targetAmount: row.target_amount,
-      currentAmount: row.current_amount,
-      targetDate: row.target_date,
-      monthlyContribution: row.monthly_contribution,
-      expectedReturn: row.expected_return,
-      color: row.color,
-      icon: row.icon
+  getAll(t) {
+    return this.db.prepare("SELECT * FROM saving_goals WHERE user_id = ?").all(t).map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      targetAmount: r.target_amount,
+      currentAmount: r.current_amount,
+      targetDate: r.target_date,
+      monthlyContribution: r.monthly_contribution,
+      expectedReturn: r.expected_return,
+      color: r.color,
+      icon: r.icon
     }));
   }
-  create(userId, goal) {
-    const id = goal.id || void 0;
-    const stmt = this.db.prepare(`
+  create(t, e) {
+    const r = e.id || void 0;
+    return this.db.prepare(`
       INSERT INTO saving_goals (id, user_id, name, type, target_amount, current_amount, target_date, monthly_contribution, expected_return, color, icon)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      id,
-      userId,
-      goal.name,
-      goal.type,
-      goal.targetAmount,
-      goal.currentAmount || 0,
-      goal.targetDate,
-      goal.monthlyContribution || 0,
-      goal.expectedReturn || 0.07,
-      goal.color || "#2563EB",
-      goal.icon || "savings"
-    );
-    return id || "unknown";
+      RETURNING id
+    `).get(
+      r,
+      t,
+      e.name,
+      e.type,
+      e.targetAmount,
+      e.currentAmount || 0,
+      e.targetDate,
+      e.monthlyContribution || 0,
+      e.expectedReturn || 0.07,
+      e.color || "#2563EB",
+      e.icon || "savings"
+    ).id;
   }
-  update(id, updates) {
-    const fields = [];
-    const params = [];
-    if (updates.name) {
-      fields.push("name = ?");
-      params.push(updates.name);
-    }
-    if (updates.type) {
-      fields.push("type = ?");
-      params.push(updates.type);
-    }
-    if (updates.targetAmount !== void 0) {
-      fields.push("target_amount = ?");
-      params.push(updates.targetAmount);
-    }
-    if (updates.currentAmount !== void 0) {
-      fields.push("current_amount = ?");
-      params.push(updates.currentAmount);
-    }
-    if (updates.targetDate) {
-      fields.push("target_date = ?");
-      params.push(updates.targetDate);
-    }
-    if (updates.monthlyContribution !== void 0) {
-      fields.push("monthly_contribution = ?");
-      params.push(updates.monthlyContribution);
-    }
-    if (updates.expectedReturn !== void 0) {
-      fields.push("expected_return = ?");
-      params.push(updates.expectedReturn);
-    }
-    if (updates.color) {
-      fields.push("color = ?");
-      params.push(updates.color);
-    }
-    if (updates.icon) {
-      fields.push("icon = ?");
-      params.push(updates.icon);
-    }
-    if (fields.length === 0) return;
-    params.push(id);
-    const sql = `UPDATE saving_goals SET ${fields.join(", ")} WHERE id = ?`;
-    this.db.prepare(sql).run(...params);
+  update(t, e) {
+    const r = [], a = [];
+    if (e.name && (r.push("name = ?"), a.push(e.name)), e.type && (r.push("type = ?"), a.push(e.type)), e.targetAmount !== void 0 && (r.push("target_amount = ?"), a.push(e.targetAmount)), e.currentAmount !== void 0 && (r.push("current_amount = ?"), a.push(e.currentAmount)), e.targetDate && (r.push("target_date = ?"), a.push(e.targetDate)), e.monthlyContribution !== void 0 && (r.push("monthly_contribution = ?"), a.push(e.monthlyContribution)), e.expectedReturn !== void 0 && (r.push("expected_return = ?"), a.push(e.expectedReturn)), e.color && (r.push("color = ?"), a.push(e.color)), e.icon && (r.push("icon = ?"), a.push(e.icon)), r.length === 0) return;
+    a.push(t);
+    const i = `UPDATE saving_goals SET ${r.join(", ")} WHERE id = ?`;
+    this.db.prepare(i).run(...a);
   }
-  delete(id) {
-    this.db.prepare("DELETE FROM saving_goals WHERE id = ?").run(id);
+  delete(t) {
+    this.db.prepare("DELETE FROM saving_goals WHERE id = ?").run(t);
   }
 }
-class DebtRepository {
-  constructor(db) {
-    this.db = db;
+class ce {
+  constructor(t) {
+    this.db = t;
   }
-  getAll(userId) {
-    const rows = this.db.prepare("SELECT * FROM debts WHERE user_id = ?").all(userId);
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      balance: row.balance,
-      originalBalance: row.original_balance,
-      interestRate: row.interest_rate,
-      minimumPayment: row.minimum_payment,
-      dueDay: row.due_day,
-      accountId: row.account_id
+  getAll(t) {
+    return this.db.prepare("SELECT * FROM debts WHERE user_id = ?").all(t).map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      balance: r.balance,
+      originalBalance: r.original_balance,
+      interestRate: r.interest_rate,
+      minimumPayment: r.minimum_payment,
+      dueDay: r.due_day,
+      accountId: r.account_id
     }));
   }
-  create(userId, debt) {
-    const id = debt.id || void 0;
-    const stmt = this.db.prepare(`
+  create(t, e) {
+    const r = e.id || void 0;
+    return this.db.prepare(`
       INSERT INTO debts (id, user_id, name, type, balance, original_balance, interest_rate, minimum_payment, due_day, account_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      id,
-      userId,
-      debt.name,
-      debt.type,
-      debt.balance,
-      debt.originalBalance,
-      debt.interestRate,
-      debt.minimumPayment,
-      debt.dueDay,
-      debt.accountId || null
-    );
-    return id || "unknown";
+      RETURNING id
+    `).get(
+      r,
+      t,
+      e.name,
+      e.type,
+      e.balance,
+      e.originalBalance,
+      e.interestRate,
+      e.minimumPayment,
+      e.dueDay,
+      e.accountId || null
+    ).id;
   }
-  delete(id) {
-    this.db.prepare("DELETE FROM debts WHERE id = ?").run(id);
+  delete(t) {
+    this.db.prepare("DELETE FROM debts WHERE id = ?").run(t);
   }
 }
-class AlertRepository {
-  constructor(db) {
-    this.db = db;
+class le {
+  constructor(t) {
+    this.db = t;
   }
-  getAll(userId) {
-    const rows = this.db.prepare("SELECT * FROM alerts WHERE user_id = ? ORDER BY created_at DESC").all(userId);
-    return rows.map((row) => ({
-      id: row.id,
-      type: row.type,
-      severity: row.severity,
-      title: row.title,
-      message: row.message,
-      date: row.created_at,
-      isRead: Boolean(row.is_read)
+  getAll(t) {
+    return this.db.prepare("SELECT * FROM alerts WHERE user_id = ? ORDER BY created_at DESC").all(t).map((r) => ({
+      id: r.id,
+      type: r.type,
+      severity: r.severity,
+      title: r.title,
+      message: r.message,
+      date: r.created_at,
+      isRead: !!r.is_read
     }));
   }
-  markAsRead(id) {
-    this.db.prepare("UPDATE alerts SET is_read = 1 WHERE id = ?").run(id);
+  markAsRead(t) {
+    this.db.prepare("UPDATE alerts SET is_read = 1 WHERE id = ?").run(t);
   }
-  markAllAsRead(userId) {
-    this.db.prepare("UPDATE alerts SET is_read = 1 WHERE user_id = ?").run(userId);
+  markAllAsRead(t) {
+    this.db.prepare("UPDATE alerts SET is_read = 1 WHERE user_id = ?").run(t);
   }
-  create(userId, alert) {
-    const stmt = this.db.prepare(`
+  create(t, e) {
+    this.db.prepare(`
       INSERT INTO alerts (id, user_id, type, severity, title, message, is_read)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      alert.id || void 0,
-      userId,
-      alert.type,
-      alert.severity,
-      alert.title,
-      alert.message,
-      alert.isRead ? 1 : 0
+    `).run(
+      e.id || void 0,
+      t,
+      e.type,
+      e.severity,
+      e.title,
+      e.message,
+      e.isRead ? 1 : 0
     );
   }
 }
-const require$1 = createRequire(import.meta.url);
-const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
-app.disableHardwareAcceleration();
-process.env.APP_ROOT = path.join(__dirname$1, "..");
-const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
-const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
-const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
-let win = null;
-function createWindow() {
-  win = new BrowserWindow({
+class X {
+  static getLogPaths() {
+    if (!this.logFilePathUserData)
+      try {
+        const t = U.getPath("userData");
+        this.logFilePathUserData = L.join(t, "errores.log");
+      } catch {
+        this.logFilePathUserData = L.join(process.cwd(), "errores-fallback.log");
+      }
+    return this.logFilePathWorkspace || (this.logFilePathWorkspace = L.join(process.cwd(), "errores.log")), {
+      userDataPath: this.logFilePathUserData,
+      workspacePath: this.logFilePathWorkspace
+    };
+  }
+  /**
+   * Genera un ID de error único y legible con formato ERR-FYN-YYYYMMDD-XXXX
+   */
+  static generateErrorId() {
+    const e = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10).replace(/-/g, ""), r = Math.random().toString(16).substring(2, 8).toUpperCase();
+    return `ERR-FYN-${e}-${r}`;
+  }
+  /**
+   * Registra un error con su stack trace en los archivos locales errores.log
+   * Retorna el ID de error único generado.
+   */
+  static logError(t, e = "GLOBAL") {
+    const r = this.generateErrorId(), a = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 23);
+    let i = "", g = "", h = "Error";
+    t instanceof Error ? (i = t.message, g = t.stack || "No stack trace available", h = t.name || "Error") : typeof t == "object" && t !== null ? (i = t.message || JSON.stringify(t), g = t.stack || "No stack trace available (Object thrown)", h = t.name || t.code || "ObjectError") : (i = String(t), g = new Error().stack || "No stack trace generated", h = "PrimitiveError");
+    const S = `
+=========================================
+[${a}] REFERENCE ID: ${r}
+CONTEXT: ${e}
+TYPE: ${h}
+MESSAGE: ${i}
+-----------------------------------------
+STACK TRACE:
+${g}
+=========================================
+`;
+    console.error(`[LOGGER ERROR - ${r}] Context: ${e} | Message: ${i}`);
+    const { userDataPath: s, workspacePath: o } = this.getLogPaths();
+    return v.appendFile(s, S, "utf8", (n) => {
+      n && console.error("[LOGGER] Error al escribir log en userData:", n);
+    }), v.appendFile(o, S, "utf8", (n) => {
+      n && console.error("[LOGGER] Error al escribir log en workspace:", n);
+    }), r;
+  }
+  /**
+   * Registra un mensaje informativo general en el log
+   */
+  static logInfo(t, e = "INFO") {
+    const a = `[${(/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 23)}] [${e}] ${t}
+`;
+    console.log(`[LOGGER INFO] [${e}] ${t}`);
+    const { userDataPath: i, workspacePath: g } = this.getLogPaths();
+    v.appendFile(i, a, "utf8", () => {
+    }), v.appendFile(g, a, "utf8", () => {
+    });
+  }
+}
+G(X, "logFilePathUserData", null), G(X, "logFilePathWorkspace", null);
+process.on("uncaughtException", (l) => {
+  X.logError(l, "MAIN_UNCAUGHT");
+});
+process.on("unhandledRejection", (l) => {
+  X.logError(l, "MAIN_UNHANDLED_REJECTION");
+});
+const W = Z(import.meta.url), Y = L.dirname(z(import.meta.url));
+U.disableHardwareAcceleration();
+process.env.APP_ROOT = L.join(Y, "..");
+const B = process.env.VITE_DEV_SERVER_URL, Re = L.join(process.env.APP_ROOT, "dist-electron"), $ = L.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = B ? L.join(process.env.APP_ROOT, "public") : $;
+let R = null;
+function V() {
+  R = new j({
     width: 1400,
     height: 1e3,
-    icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+    icon: L.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
     webPreferences: {
-      preload: path.join(__dirname$1, "preload.js")
+      preload: L.join(Y, "preload.js")
     },
     title: "Fyn Finance OS",
     backgroundColor: "#0e0e0f",
-    show: false
+    show: !1
   });
-  const originalLog = console.log;
-  const originalError = console.error;
-  const sendLog = (type, message) => {
-    if (win == null ? void 0 : win.webContents) {
-      originalLog(`[Internal ${type}]`, message);
-      win.webContents.send("system:log", {
-        timestamp: (/* @__PURE__ */ new Date()).toLocaleTimeString(),
-        type,
-        message: typeof message === "object" ? JSON.stringify(message, null, 2) : String(message)
-      });
-    }
+  const l = console.log, t = console.error, e = (r, a) => {
+    R != null && R.webContents && (l(`[Internal ${r}]`, a), R.webContents.send("system:log", {
+      timestamp: (/* @__PURE__ */ new Date()).toLocaleTimeString(),
+      type: r,
+      message: typeof a == "object" ? JSON.stringify(a, null, 2) : String(a)
+    }));
   };
-  console.log = (...args) => {
-    originalLog(...args);
-    sendLog("INFO", args.join(" "));
-  };
-  console.error = (...args) => {
-    originalError(...args);
-    sendLog("ERROR", args.join(" "));
-  };
-  win.once("ready-to-show", () => {
-    win == null ? void 0 : win.show();
-  });
-  if (VITE_DEV_SERVER_URL) {
-    console.log("[Main] Loading URL:", VITE_DEV_SERVER_URL);
-    win.loadURL(VITE_DEV_SERVER_URL);
-  } else {
-    console.log("[Main] Loading File:", path.join(RENDERER_DIST, "index.html"));
-    win.loadFile(path.join(RENDERER_DIST, "index.html"));
-  }
-  win.webContents.on("did-fail-load", (_, errorCode, errorDescription) => {
-    console.error(`[Main] Failed to load: ${errorCode} - ${errorDescription}`);
+  console.log = (...r) => {
+    l(...r), e("INFO", r.join(" "));
+  }, console.error = (...r) => {
+    t(...r), e("ERROR", r.join(" "));
+  }, R.once("ready-to-show", () => {
+    R == null || R.show();
+  }), B ? (console.log("[Main] Loading URL:", B), R.loadURL(B)) : (console.log("[Main] Loading File:", L.join($, "index.html")), R.loadFile(L.join($, "index.html"))), R.webContents.on("did-fail-load", (r, a, i) => {
+    console.error(`[Main] Failed to load: ${a} - ${i}`);
   });
 }
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-    win = null;
-  }
+U.on("window-all-closed", () => {
+  process.platform !== "darwin" && (U.quit(), R = null);
 });
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+U.on("activate", () => {
+  j.getAllWindows().length === 0 && V();
 });
-app.whenReady().then(() => {
-  const dbPath = path.join(app.getPath("userData"), "fyn-finance.sqlite");
-  const db = getDatabase(dbPath);
-  initSchema(db);
-  seedDatabase();
-  const profileRepo = new ProfileRepository(db);
-  const accountRepo = new AccountRepository(db);
-  const txRepo = new TransactionRepository(db);
-  const budgetRepo = new BudgetRepository(db);
-  const goalRepo = new GoalRepository(db);
-  const debtRepo = new DebtRepository(db);
-  const alertRepo = new AlertRepository(db);
-  ipcMain.handle("get-profile", () => profileRepo.getProfile());
-  ipcMain.handle("update-profile", (_, updates) => profileRepo.updateProfile(updates));
-  ipcMain.handle("get-accounts", (_, userId) => accountRepo.getAll(userId));
-  ipcMain.handle("add-account", (_, userId, acc) => accountRepo.create(userId, acc));
-  ipcMain.handle("update-account", (_, id, updates) => accountRepo.update(id, updates));
-  ipcMain.handle("delete-account", (_, id) => accountRepo.delete(id));
-  ipcMain.handle("get-transactions", (_, userId) => txRepo.getAll(userId));
-  ipcMain.handle("add-transaction", (_, userId, tx) => txRepo.create(userId, tx));
-  ipcMain.handle("delete-transaction", (_, id) => txRepo.delete(id));
-  ipcMain.handle("get-budgets", (_, userId, period) => budgetRepo.getAll(userId, period));
-  ipcMain.handle("add-budget", (_, userId, budget) => budgetRepo.create(userId, budget));
-  ipcMain.handle("update-budget", (_, id, updates) => budgetRepo.update(id, updates));
-  ipcMain.handle("delete-budget", (_, id) => budgetRepo.delete(id));
-  ipcMain.handle("get-goals", (_, userId) => goalRepo.getAll(userId));
-  ipcMain.handle("add-goal", (_, userId, goal) => goalRepo.create(userId, goal));
-  ipcMain.handle("update-goal", (_, id, updates) => goalRepo.update(id, updates));
-  ipcMain.handle("delete-goal", (_, id) => goalRepo.delete(id));
-  ipcMain.handle("get-debts", (_, userId) => debtRepo.getAll(userId));
-  ipcMain.handle("add-debt", (_, userId, debt) => debtRepo.create(userId, debt));
-  ipcMain.handle("delete-debt", (_, id) => debtRepo.delete(id));
-  ipcMain.handle("get-alerts", (_, userId) => alertRepo.getAll(userId));
-  ipcMain.handle("mark-alert-read", (_, id) => alertRepo.markAsRead(id));
-  ipcMain.handle("mark-all-alerts-read", (_, userId) => alertRepo.markAllAsRead(userId));
-  ipcMain.handle("reset-database", async () => {
-    console.log("[Main] Resetting database...");
-    db.prepare("DELETE FROM alerts").run();
-    db.prepare("DELETE FROM transactions").run();
-    db.prepare("DELETE FROM accounts").run();
-    db.prepare("DELETE FROM saving_goals").run();
-    db.prepare("DELETE FROM budgets").run();
-    db.prepare("DELETE FROM debts").run();
-    db.prepare("DELETE FROM net_worth_history").run();
-    db.prepare("DELETE FROM profiles").run();
-    return true;
-  });
-  ipcMain.handle("pdf:parseAndSave", async (event, filePath) => {
-    try {
-      const { detectBank, parsePdfContent } = await import("./index-CY4DtIPo.js");
-      const { extractAccountMeta } = await import("./metaExtractor-DH8tcHXP.js");
-      const { inferCategory, generateTxHash } = await import("./categoryInfer-Bf2rSKEv.js");
-      const pdfRaw = require$1("pdf-parse");
-      console.log("[Main] pdf-parse loaded. Type:", typeof pdfRaw);
-      const parsePdf = typeof pdfRaw === "function" ? pdfRaw : pdfRaw.default;
-      if (typeof parsePdf !== "function") {
-        throw new Error(`pdf-parse is not a function (it is a ${typeof parsePdf})`);
+U.whenReady().then(() => {
+  const l = L.join(U.getPath("userData"), "fyn-finance.sqlite"), t = te(l);
+  re(t);
+  const e = new ne(t), r = new ae(t), a = new oe(t), i = new se(t), g = new ie(t), h = new ce(t), S = new le(t);
+  function s(o, n) {
+    Q.handle(o, async (c, ...N) => {
+      try {
+        return await n(c, ...N);
+      } catch (T) {
+        return {
+          isError: !0,
+          message: "Ocurrió un error inesperado al procesar la solicitud.",
+          ref: X.logError(T, `IPC:${o}`)
+        };
       }
-      const fs = await import("node:fs");
-      console.log("[Main] Starting PDF parse for:", filePath);
-      const dataBuffer = fs.readFileSync(filePath);
-      const data = await parsePdf(dataBuffer);
-      const text = data.text;
-      console.log(`[Main] PDF Text extracted. Length: ${text.length} chars.`);
-      const bankId = detectBank(text);
-      console.log(`[Main] Bank detected: ${bankId}`);
-      if (bankId === "Generic") {
-        return { success: false, error: "Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original." };
-      }
-      const meta = extractAccountMeta(text, bankId);
-      const profile = db.prepare("SELECT id FROM profiles LIMIT 1").get();
-      if (!profile) return { success: false, error: "No hay perfil configurado." };
-      let account = db.prepare(`
-        SELECT * FROM accounts 
-        WHERE user_id = ? AND bank = ? AND (last_four = ? OR name = ?)
-      `).get(profile.id, bankId, meta.lastFour, meta.accountName);
-      if (!account) {
-        console.log("[Main] Creating new account:", meta.accountName);
-        const result = db.prepare(`
-          INSERT INTO accounts (user_id, name, bank, type, balance, currency, color, last_four)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          profile.id,
-          meta.accountName,
-          bankId,
-          meta.accountType,
-          meta.finalBalance || 0,
-          meta.currency,
-          bankId === "Openbank" ? "#0066CC" : bankId === "BBVA" ? "#004481" : "#820AD1",
-          meta.lastFour
-        );
-        account = { id: result.lastInsertRowid.toString(), name: meta.accountName };
-      }
-      const parsed = parsePdfContent(bankId, text);
-      console.log(`[Main] Transactions parsed: ${parsed.length}`);
-      if (parsed.length === 0) {
-        return { success: false, error: `No se encontraron transacciones legibles para ${bankId}.` };
-      }
-      const insertStmt = db.prepare(`
-        INSERT OR IGNORE INTO transactions 
-        (user_id, account_id, date, amount, type, category, description, source, dedup_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      let inserted = 0;
-      let duplicates = 0;
-      const transaction = db.transaction((txs) => {
-        for (const tx of txs) {
-          const hash = generateTxHash(tx.date, tx.amount, tx.description);
-          const result = insertStmt.run(
-            profile.id,
-            account.id,
-            tx.date,
-            tx.amount,
-            tx.type,
-            inferCategory(tx.description, tx.type),
-            tx.description,
-            "pdf",
-            hash
-          );
-          if (result.changes > 0) inserted++;
-          else duplicates++;
-        }
-      });
-      transaction(parsed);
-      if (meta.finalBalance !== void 0) {
-        db.prepare("UPDATE accounts SET balance = ? WHERE id = ?").run(meta.finalBalance, account.id);
-      }
-      return {
-        success: true,
-        bank: bankId,
-        accountName: account.name,
-        inserted,
-        duplicates
-      };
-    } catch (error) {
-      console.error("[Main] automated parse error:", error);
-      return { success: false, error: error.message };
+    });
+  }
+  s("get-profile", () => e.getProfile()), s("create-profile", (o, n) => e.createProfile(n)), s("update-profile", (o, n) => e.updateProfile(n)), s("get-alert-settings", (o, n) => e.getAlertSettings(n)), s("update-alert-settings", (o, n, c) => e.updateAlertSettings(n, c)), s("get-net-worth-history", (o, n) => t.prepare("SELECT month, assets, liabilities, net_worth as netWorth FROM net_worth_history WHERE user_id = ? ORDER BY month ASC").all(n)), s("calculate-net-worth-history", (o, n) => {
+    const c = t.prepare("SELECT type, balance FROM accounts WHERE user_id = ?").all(n);
+    let N = 0, T = 0;
+    for (const d of c)
+      d.type === "credito" ? d.balance < 0 ? T += Math.abs(d.balance) : T += d.balance : d.balance > 0 && (N += d.balance);
+    const b = t.prepare("SELECT date, amount, type FROM transactions WHERE user_id = ? ORDER BY date DESC").all(n), _ = {};
+    for (const d of b) {
+      const O = d.date.substring(0, 7);
+      _[O] || (_[O] = []), _[O].push(d);
     }
-  });
-  ipcMain.handle("show-open-dialog", async () => {
-    const { dialog } = await import("electron");
-    const result = await dialog.showOpenDialog({
+    const u = /* @__PURE__ */ new Date(), f = [];
+    for (let d = 5; d >= 0; d--) {
+      const y = new Date(u.getFullYear(), u.getMonth() - d, 1).toISOString().substring(0, 7);
+      f.push(y);
+    }
+    const D = [...f].reverse(), m = [];
+    let p = N, I = T;
+    for (const d of D) {
+      m.push({
+        month: d,
+        assets: Math.round(p),
+        liabilities: Math.round(I),
+        netWorth: Math.round(p - I)
+      });
+      const O = _[d] || [];
+      for (const y of O)
+        y.type === "ingreso" ? p -= y.amount : y.type === "gasto" && (p += y.amount);
+    }
+    const C = m.reverse(), P = t.prepare(`
+      INSERT INTO net_worth_history (user_id, month, assets, liabilities, net_worth)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, month) DO UPDATE SET
+        assets = excluded.assets,
+        liabilities = excluded.liabilities,
+        net_worth = excluded.net_worth
+    `);
+    return t.transaction(() => {
+      for (const d of C)
+        P.run(n, d.month, d.assets, d.liabilities, d.netWorth);
+    })(), C;
+  }), s("get-accounts", (o, n) => r.getAll(n)), s("add-account", (o, n, c) => r.create(n, c)), s("update-account", (o, n, c) => r.update(n, c)), s("delete-account", (o, n) => r.delete(n)), s("get-transactions", (o, n) => a.getAll(n)), s("add-transaction", (o, n, c) => a.create(n, c)), s("delete-transaction", (o, n) => a.delete(n)), s("get-budgets", (o, n, c) => i.getAll(n, c)), s("add-budget", (o, n, c) => i.create(n, c)), s("update-budget", (o, n, c) => i.update(n, c)), s("delete-budget", (o, n) => i.delete(n)), s("get-goals", (o, n) => g.getAll(n)), s("add-goal", (o, n, c) => g.create(n, c)), s("update-goal", (o, n, c) => g.update(n, c)), s("delete-goal", (o, n) => g.delete(n)), s("get-debts", (o, n) => h.getAll(n)), s("add-debt", (o, n, c) => h.create(n, c)), s("delete-debt", (o, n) => h.delete(n)), s("get-alerts", (o, n) => S.getAll(n)), s("mark-alert-read", (o, n) => S.markAsRead(n)), s("mark-all-alerts-read", (o, n) => S.markAllAsRead(n)), s("reset-database", async () => (console.log("[Main] Resetting database..."), t.prepare("DELETE FROM alerts").run(), t.prepare("DELETE FROM transactions").run(), t.prepare("DELETE FROM accounts").run(), t.prepare("DELETE FROM saving_goals").run(), t.prepare("DELETE FROM budgets").run(), t.prepare("DELETE FROM debts").run(), t.prepare("DELETE FROM net_worth_history").run(), t.prepare("DELETE FROM profiles").run(), !0)), s("system:log-renderer-error", (o, n) => {
+    const { message: c, stack: N, url: T, line: b, col: _ } = n || {}, u = {
+      name: "RendererError",
+      message: c || "Unknown React/Renderer error",
+      stack: N || `at ${T || "unknown"}:${b || 0}:${_ || 0}`
+    };
+    return X.logError(u, "RENDERER");
+  }), s("parse-pdf", async (o, n) => {
+    const { detectBank: c, parsePdfContent: N } = await import("./index-BRKsNUSA.js"), T = W("pdf-parse");
+    console.log("[Main] pdf-parse loaded for parse-pdf preview. Type:", typeof T);
+    const b = await import("node:fs");
+    console.log("[Main] Starting parse-pdf preview for:", n);
+    const _ = b.readFileSync(n);
+    let u = "";
+    if (T && T.PDFParse) {
+      console.log("[Main] Instantiating PDFParse for preview with data buffer...");
+      const m = new T.PDFParse({ data: _ });
+      u = (await m.getText()).text, await m.destroy();
+    } else {
+      const m = typeof T == "function" ? T : T.default;
+      if (typeof m != "function")
+        throw new Error(`pdf-parse is not a function (it is a ${typeof m})`);
+      u = (await m(_)).text;
+    }
+    console.log(`[Main] PDF Text extracted for preview. Length: ${u.length} chars.`);
+    const f = c(u);
+    if (console.log(`[Main] Bank detected for preview: ${f}`), f === "Generic")
+      return { success: !1, error: "Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original." };
+    const D = N(f, u);
+    return console.log(`[Main] Transactions parsed for preview: ${D.length}`), D.length === 0 ? { success: !1, error: `No se encontraron transacciones legibles para ${f}.` } : {
+      success: !0,
+      bank: f,
+      transactions: D
+    };
+  }), s("pdf:parseAndSave", async (o, n) => {
+    const { detectBank: c, parsePdfContent: N } = await import("./index-BRKsNUSA.js"), { extractAccountMeta: T } = await import("./metaExtractor-3aSMOwGp.js"), { inferCategory: b, generateTxHash: _ } = await import("./categoryInfer-MHdCU11W.js"), u = W("pdf-parse");
+    console.log("[Main] pdf-parse loaded. Type:", typeof u);
+    const f = await import("node:fs");
+    console.log("[Main] Starting PDF parse for:", n);
+    const D = f.readFileSync(n);
+    let m = "";
+    if (u && u.PDFParse) {
+      console.log("[Main] Instantiating PDFParse with data buffer...");
+      const A = new u.PDFParse({ data: D });
+      m = (await A.getText()).text, await A.destroy();
+    } else {
+      const A = typeof u == "function" ? u : u.default;
+      if (typeof A != "function")
+        throw new Error(`pdf-parse is not a function (it is a ${typeof A})`);
+      m = (await A(D)).text;
+    }
+    console.log(`[Main] PDF Text extracted. Length: ${m.length} chars.`);
+    const p = c(m);
+    if (console.log(`[Main] Bank detected: ${p}`), p === "Generic")
+      return { success: !1, error: "Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original." };
+    const I = T(m, p), C = Array.isArray(I) ? I : [I], P = t.prepare("SELECT id FROM profiles LIMIT 1").get();
+    if (!P) return { success: !1, error: "No hay perfil configurado." };
+    const w = N(p, m);
+    if (console.log(`[Main] Transactions parsed: ${w.length}`), w.length === 0 && C.length === 0)
+      return { success: !1, error: `No se encontraron datos legibles para ${p}.` };
+    const d = t.prepare(`
+      INSERT INTO accounts (user_id, name, bank, type, balance, currency, color, last_four)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id, type
+    `), O = t.prepare(`
+      INSERT OR IGNORE INTO transactions 
+      (user_id, account_id, date, amount, type, category, description, source, dedup_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    let y = 0, H = 0;
+    const x = {};
+    return t.transaction((A) => {
+      for (const E of C) {
+        let F = t.prepare(`
+          SELECT * FROM accounts 
+          WHERE user_id = ? AND bank = ? AND (last_four = ? OR name = ?)
+        `).get(P.id, p, E.lastFour, E.accountName);
+        if (!F) {
+          console.log("[Main] Creating new account:", E.accountName);
+          const k = p === "Openbank" ? "#0066CC" : p === "BBVA" ? "#004481" : p === "Klar" ? "#00C4B3" : "#820AD1";
+          F = { id: d.get(
+            P.id,
+            E.accountName,
+            p,
+            E.accountType,
+            E.finalBalance || 0,
+            E.currency,
+            k,
+            E.lastFour
+          ).id, name: E.accountName, type: E.accountType };
+        }
+        x[E.accountType] = F, E.finalBalance !== void 0 && t.prepare("UPDATE accounts SET balance = ? WHERE id = ?").run(E.finalBalance, F.id);
+      }
+      for (const E of A) {
+        let F = x[E.subAccount || "debito"] || Object.values(x)[0];
+        if (!F) continue;
+        const k = _(E.date, E.amount, E.description);
+        O.run(
+          P.id,
+          F.id,
+          E.date,
+          E.amount,
+          E.type,
+          b(E.description, E.type),
+          E.description,
+          "pdf",
+          k
+        ).changes > 0 ? y++ : H++;
+      }
+    })(w), {
+      success: !0,
+      bank: p,
+      accountName: C.map((A) => A.accountName).join(" + "),
+      inserted: y,
+      duplicates: H
+    };
+  }), s("show-open-dialog", async () => {
+    const { dialog: o } = await import("electron");
+    return (await o.showOpenDialog({
       properties: ["openFile"],
       filters: [{ name: "Documentos PDF", extensions: ["pdf"] }]
-    });
-    return result.filePaths[0];
-  });
-  console.log("Database initialized at:", dbPath);
-  createWindow();
+    })).filePaths[0];
+  }), console.log("Database initialized at:", l), V();
 });
 export {
-  MAIN_DIST,
-  RENDERER_DIST,
-  VITE_DEV_SERVER_URL
+  Re as MAIN_DIST,
+  $ as RENDERER_DIST,
+  B as VITE_DEV_SERVER_URL
 };
 //# sourceMappingURL=main.js.map

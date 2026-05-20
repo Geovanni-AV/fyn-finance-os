@@ -25,9 +25,10 @@ export class AccountRepository {
     const stmt = this.db.prepare(`
       INSERT INTO accounts (id, user_id, name, bank, type, balance, credit_limit, currency, color, last_four, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id
     `)
 
-    stmt.run(
+    const result = stmt.get(
       id,
       userId,
       account.name,
@@ -39,9 +40,9 @@ export class AccountRepository {
       account.color || '#2563EB',
       account.lastFour || null,
       account.isActive !== false ? 1 : 0
-    )
+    ) as { id: string }
     
-    return id || 'unknown'
+    return result.id
   }
 
   update(id: string, updates: Partial<Account>): void {

@@ -11,6 +11,16 @@ import { BudgetRepository } from '../src/db/repositories/budget.repository'
 import { GoalRepository } from '../src/db/repositories/goal.repository'
 import { DebtRepository } from '../src/db/repositories/debt.repository'
 import { AlertRepository } from '../src/db/repositories/alert.repository'
+import { Logger } from './utils/logger'
+
+// Captura global de excepciones en el proceso Main
+process.on('uncaughtException', (error) => {
+  Logger.logError(error, 'MAIN_UNCAUGHT')
+})
+
+process.on('unhandledRejection', (reason) => {
+  Logger.logError(reason, 'MAIN_UNHANDLED_REJECTION')
+})
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -107,7 +117,6 @@ app.whenReady().then(() => {
   const dbPath = path.join(app.getPath('userData'), 'fyn-finance.sqlite')
   const db = getDatabase(dbPath)
   initSchema(db)
-  seedDatabase(db)
   
   const profileRepo = new ProfileRepository(db)
   const accountRepo = new AccountRepository(db)
@@ -119,45 +128,136 @@ app.whenReady().then(() => {
 
   // --- IPC Handlers ---
 
-  // Profile
-  ipcMain.handle('get-profile', () => profileRepo.getProfile())
-  ipcMain.handle('update-profile', (_, updates) => profileRepo.updateProfile(updates))
+  function safeIpcHandle(channel: string, handler: (...args: any[]) => any) {
+    ipcMain.handle(channel, async (event, ...args) => {
+      try {
+        return await handler(event, ...args)
+      } catch (error) {
+        const refId = Logger.logError(error, `IPC:${channel}`)
+        return {
+          isError: true,
+          message: 'Ocurrió un error inesperado al procesar la solicitud.',
+          ref: refId
+        }
+      }
+    })
+  }
+
+  // Profile & Settings
+  safeIpcHandle('get-profile', () => profileRepo.getProfile())
+  safeIpcHandle('create-profile', (_, profile) => profileRepo.createProfile(profile))
+  safeIpcHandle('update-profile', (_, updates) => profileRepo.updateProfile(updates))
+  safeIpcHandle('get-alert-settings', (_, userId) => profileRepo.getAlertSettings(userId))
+  safeIpcHandle('update-alert-settings', (_, userId, settings) => profileRepo.updateAlertSettings(userId, settings))
+
+  // Net Worth History
+  safeIpcHandle('get-net-worth-history', (_, userId) => {
+    return db.prepare('SELECT month, assets, liabilities, net_worth as netWorth FROM net_worth_history WHERE user_id = ? ORDER BY month ASC').all(userId) as any[]
+  })
+  safeIpcHandle('calculate-net-worth-history', (_, userId) => {
+    const accounts = db.prepare('SELECT type, balance FROM accounts WHERE user_id = ?').all(userId) as any[]
+    let currentAssets = 0
+    let currentLiabilities = 0
+    for (const acc of accounts) {
+      if (acc.type === 'credito') {
+        if (acc.balance < 0) {
+          currentLiabilities += Math.abs(acc.balance)
+        } else {
+          currentLiabilities += acc.balance
+        }
+      } else {
+        if (acc.balance > 0) {
+          currentAssets += acc.balance
+        }
+      }
+    }
+    const txs = db.prepare('SELECT date, amount, type FROM transactions WHERE user_id = ? ORDER BY date DESC').all(userId) as any[]
+    const txsByMonth: Record<string, typeof txs> = {}
+    for (const tx of txs) {
+      const m = tx.date.substring(0, 7)
+      if (!txsByMonth[m]) txsByMonth[m] = []
+      txsByMonth[m].push(tx)
+    }
+    const now = new Date()
+    const months: string[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const mStr = d.toISOString().substring(0, 7)
+      months.push(mStr)
+    }
+    const monthsReversed = [...months].reverse()
+    const history: any[] = []
+    let runningAssets = currentAssets
+    let runningLiabilities = currentLiabilities
+    for (const mStr of monthsReversed) {
+      history.push({
+        month: mStr,
+        assets: Math.round(runningAssets),
+        liabilities: Math.round(runningLiabilities),
+        netWorth: Math.round(runningAssets - runningLiabilities)
+      })
+      const monthTxs = txsByMonth[mStr] || []
+      for (const tx of monthTxs) {
+        if (tx.type === 'ingreso') {
+          runningAssets -= tx.amount
+        } else if (tx.type === 'gasto') {
+          runningAssets += tx.amount
+        }
+      }
+    }
+    const sortedHistory = history.reverse()
+    const insertStmt = db.prepare(`
+      INSERT INTO net_worth_history (user_id, month, assets, liabilities, net_worth)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, month) DO UPDATE SET
+        assets = excluded.assets,
+        liabilities = excluded.liabilities,
+        net_worth = excluded.net_worth
+    `)
+    const runTx = db.transaction(() => {
+      for (const snap of sortedHistory) {
+        insertStmt.run(userId, snap.month, snap.assets, snap.liabilities, snap.netWorth)
+      }
+    })
+    runTx()
+    return sortedHistory
+  })
 
   // Accounts
-  ipcMain.handle('get-accounts', (_, userId) => accountRepo.getAll(userId))
-  ipcMain.handle('add-account', (_, userId, acc) => accountRepo.create(userId, acc))
-  ipcMain.handle('update-account', (_, id, updates) => accountRepo.update(id, updates))
-  ipcMain.handle('delete-account', (_, id) => accountRepo.delete(id))
+  safeIpcHandle('get-accounts', (_, userId) => accountRepo.getAll(userId))
+  safeIpcHandle('add-account', (_, userId, acc) => accountRepo.create(userId, acc))
+  safeIpcHandle('update-account', (_, id, updates) => accountRepo.update(id, updates))
+  safeIpcHandle('delete-account', (_, id) => accountRepo.delete(id))
 
   // Transactions
-  ipcMain.handle('get-transactions', (_, userId) => txRepo.getAll(userId))
-  ipcMain.handle('add-transaction', (_, userId, tx) => txRepo.create(userId, tx))
-  ipcMain.handle('delete-transaction', (_, id) => txRepo.delete(id))
+  safeIpcHandle('get-transactions', (_, userId) => txRepo.getAll(userId))
+  safeIpcHandle('add-transaction', (_, userId, tx) => txRepo.create(userId, tx))
+  safeIpcHandle('delete-transaction', (_, id) => txRepo.delete(id))
 
   // Budgets
-  ipcMain.handle('get-budgets', (_, userId, period) => budgetRepo.getAll(userId, period))
-  ipcMain.handle('add-budget', (_, userId, budget) => budgetRepo.create(userId, budget))
-  ipcMain.handle('update-budget', (_, id, updates) => budgetRepo.update(id, updates))
-  ipcMain.handle('delete-budget', (_, id) => budgetRepo.delete(id))
+  safeIpcHandle('get-budgets', (_, userId, period) => budgetRepo.getAll(userId, period))
+  safeIpcHandle('add-budget', (_, userId, budget) => budgetRepo.create(userId, budget))
+  safeIpcHandle('update-budget', (_, id, updates) => budgetRepo.update(id, updates))
+  safeIpcHandle('delete-budget', (_, id) => budgetRepo.delete(id))
 
   // Goals
-  ipcMain.handle('get-goals', (_, userId) => goalRepo.getAll(userId))
-  ipcMain.handle('add-goal', (_, userId, goal) => goalRepo.create(userId, goal))
-  ipcMain.handle('update-goal', (_, id, updates) => goalRepo.update(id, updates))
-  ipcMain.handle('delete-goal', (_, id) => goalRepo.delete(id))
+  safeIpcHandle('get-goals', (_, userId) => goalRepo.getAll(userId))
+  safeIpcHandle('add-goal', (_, userId, goal) => goalRepo.create(userId, goal))
+  safeIpcHandle('update-goal', (_, id, updates) => goalRepo.update(id, updates))
+  safeIpcHandle('delete-goal', (_, id) => goalRepo.delete(id))
 
   // Debts
-  ipcMain.handle('get-debts', (_, userId) => debtRepo.getAll(userId))
-  ipcMain.handle('add-debt', (_, userId, debt) => debtRepo.create(userId, debt))
-  ipcMain.handle('delete-debt', (_, id) => debtRepo.delete(id))
+  safeIpcHandle('get-debts', (_, userId) => debtRepo.getAll(userId))
+  safeIpcHandle('add-debt', (_, userId, debt) => debtRepo.create(userId, debt))
+  safeIpcHandle('delete-debt', (_, id) => debtRepo.delete(id))
 
   // Alerts
-  ipcMain.handle('get-alerts', (_, userId) => alertRepo.getAll(userId))
-  ipcMain.handle('mark-alert-read', (_, id) => alertRepo.markAsRead(id))
-  ipcMain.handle('mark-all-alerts-read', (_, userId) => alertRepo.markAllAsRead(userId))
+  safeIpcHandle('get-alerts', (_, userId) => alertRepo.getAll(userId))
+  safeIpcHandle('mark-alert-read', (_, id) => alertRepo.markAsRead(id))
+  safeIpcHandle('mark-all-alerts-read', (_, userId) => alertRepo.markAllAsRead(userId))
 
   // System & Management
-  ipcMain.handle('reset-database', async () => {
+  safeIpcHandle('reset-database', async () => {
     console.log('[Main] Resetting database...')
     db.prepare('DELETE FROM alerts').run()
     db.prepare('DELETE FROM transactions').run()
@@ -170,127 +270,206 @@ app.whenReady().then(() => {
     return true
   })
 
-  ipcMain.handle('pdf:parseAndSave', async (event, filePath) => {
-    try {
-      const { detectBank, parsePdfContent } = await import('./parsers/index')
-      const { extractAccountMeta } = await import('./parsers/metaExtractor')
-      const { inferCategory, generateTxHash } = await import('./utils/categoryInfer')
-      const pdfRaw = require('pdf-parse')
-      console.log('[Main] pdf-parse loaded. Type:', typeof pdfRaw)
+  safeIpcHandle('system:log-renderer-error', (_, errorData) => {
+    const { message, stack, url, line, col } = errorData || {}
+    const dummyError = {
+      name: 'RendererError',
+      message: message || 'Unknown React/Renderer error',
+      stack: stack || `at ${url || 'unknown'}:${line || 0}:${col || 0}`
+    }
+    return Logger.logError(dummyError, 'RENDERER')
+  })
 
-      // Determinar la función de parseo real
+  safeIpcHandle('parse-pdf', async (event, filePath) => {
+    const { detectBank, parsePdfContent } = await import('./parsers/index')
+    const pdfRaw = require('pdf-parse')
+    console.log('[Main] pdf-parse loaded for parse-pdf preview. Type:', typeof pdfRaw)
+
+    const fs = await import('node:fs')
+    console.log('[Main] Starting parse-pdf preview for:', filePath)
+
+    // 1. Leer y extraer texto
+    const dataBuffer = fs.readFileSync(filePath)
+    let text = ''
+    if (pdfRaw && pdfRaw.PDFParse) {
+      console.log('[Main] Instantiating PDFParse for preview with data buffer...')
+      const parser = new pdfRaw.PDFParse({ data: dataBuffer })
+      const result = await parser.getText()
+      text = result.text
+      await parser.destroy()
+    } else {
       const parsePdf = (typeof pdfRaw === 'function') ? pdfRaw : pdfRaw.default
-      
       if (typeof parsePdf !== 'function') {
         throw new Error(`pdf-parse is not a function (it is a ${typeof parsePdf})`)
       }
-
-      const fs = await import('node:fs')
-      console.log('[Main] Starting PDF parse for:', filePath)
-
-      // 1. Leer y extraer texto
-      const dataBuffer = fs.readFileSync(filePath)
       const data = await parsePdf(dataBuffer)
-      const text = data.text
-      console.log(`[Main] PDF Text extracted. Length: ${text.length} chars.`)
+      text = data.text
+    }
+    console.log(`[Main] PDF Text extracted for preview. Length: ${text.length} chars.`)
 
-      // 2. Detectar banco
-      const bankId = detectBank(text)
-      console.log(`[Main] Bank detected: ${bankId}`)
-      
-      if (bankId === 'Generic') {
-        return { success: false, error: 'Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original.' }
-      }
+    // 2. Detectar banco
+    const bankId = detectBank(text)
+    console.log(`[Main] Bank detected for preview: ${bankId}`)
+    
+    if (bankId === 'Generic') {
+      return { success: false, error: 'Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original.' }
+    }
 
-      // 3. Extraer metadatos
-      const meta = extractAccountMeta(text, bankId)
-      
-      // 4. Obtener perfil
-      const profile = db.prepare('SELECT id FROM profiles LIMIT 1').get() as { id: string }
-      if (!profile) return { success: false, error: 'No hay perfil configurado.' }
+    // 3. Parsear transacciones
+    const parsed = parsePdfContent(bankId, text)
+    console.log(`[Main] Transactions parsed for preview: ${parsed.length}`)
 
-      // 5. Buscar o crear cuenta
-      let account = db.prepare(`
-        SELECT * FROM accounts 
-        WHERE user_id = ? AND bank = ? AND (last_four = ? OR name = ?)
-      `).get(profile.id, bankId, meta.lastFour, meta.accountName) as any
+    if (parsed.length === 0) {
+      return { success: false, error: `No se encontraron transacciones legibles para ${bankId}.` }
+    }
 
-      if (!account) {
-        console.log('[Main] Creating new account:', meta.accountName)
-        const result = db.prepare(`
-          INSERT INTO accounts (user_id, name, bank, type, balance, currency, color, last_four)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          profile.id, 
-          meta.accountName, 
-          bankId, 
-          meta.accountType, 
-          meta.finalBalance || 0, 
-          meta.currency,
-          bankId === 'Openbank' ? '#0066CC' : bankId === 'BBVA' ? '#004481' : '#820AD1',
-          meta.lastFour
-        )
-        account = { id: result.lastInsertRowid.toString(), name: meta.accountName }
-      }
-      
-      // 6. Parsear transacciones
-      const parsed = parsePdfContent(bankId, text)
-      console.log(`[Main] Transactions parsed: ${parsed.length}`)
-
-      if (parsed.length === 0) {
-        return { success: false, error: `No se encontraron transacciones legibles para ${bankId}.` }
-      }
-      
-      // 7. Insertar con deduplicación
-      const insertStmt = db.prepare(`
-        INSERT OR IGNORE INTO transactions 
-        (user_id, account_id, date, amount, type, category, description, source, dedup_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-
-      let inserted = 0
-      let duplicates = 0
-
-      const transaction = db.transaction((txs) => {
-        for (const tx of txs) {
-          const hash = generateTxHash(tx.date, tx.amount, tx.description)
-          const result = insertStmt.run(
-            profile.id,
-            account.id,
-            tx.date,
-            tx.amount,
-            tx.type,
-            inferCategory(tx.description, tx.type),
-            tx.description,
-            'pdf',
-            hash
-          )
-          if (result.changes > 0) inserted++
-          else duplicates++
-        }
-      })
-
-      transaction(parsed)
-
-      // 8. Actualizar saldo final si se detectó
-      if (meta.finalBalance !== undefined) {
-        db.prepare('UPDATE accounts SET balance = ? WHERE id = ?').run(meta.finalBalance, account.id)
-      }
-
-      return {
-        success: true,
-        bank: bankId,
-        accountName: account.name,
-        inserted,
-        duplicates
-      }
-    } catch (error: any) {
-      console.error('[Main] automated parse error:', error)
-      return { success: false, error: error.message }
+    return {
+      success: true,
+      bank: bankId,
+      transactions: parsed
     }
   })
 
-  ipcMain.handle('show-open-dialog', async () => {
+  safeIpcHandle('pdf:parseAndSave', async (event, filePath) => {
+    const { detectBank, parsePdfContent } = await import('./parsers/index')
+    const { extractAccountMeta } = await import('./parsers/metaExtractor')
+    const { inferCategory, generateTxHash } = await import('./utils/categoryInfer')
+    const pdfRaw = require('pdf-parse')
+    console.log('[Main] pdf-parse loaded. Type:', typeof pdfRaw)
+
+    const fs = await import('node:fs')
+    console.log('[Main] Starting PDF parse for:', filePath)
+
+    // 1. Leer y extraer texto
+    const dataBuffer = fs.readFileSync(filePath)
+    let text = ''
+    if (pdfRaw && pdfRaw.PDFParse) {
+      console.log('[Main] Instantiating PDFParse with data buffer...')
+      const parser = new pdfRaw.PDFParse({ data: dataBuffer })
+      const result = await parser.getText()
+      text = result.text
+      await parser.destroy()
+    } else {
+      const parsePdf = (typeof pdfRaw === 'function') ? pdfRaw : pdfRaw.default
+      if (typeof parsePdf !== 'function') {
+        throw new Error(`pdf-parse is not a function (it is a ${typeof parsePdf})`)
+      }
+      const data = await parsePdf(dataBuffer)
+      text = data.text
+    }
+    console.log(`[Main] PDF Text extracted. Length: ${text.length} chars.`)
+
+    // 2. Detectar banco
+    const bankId = detectBank(text)
+    console.log(`[Main] Bank detected: ${bankId}`)
+    
+    if (bankId === 'Generic') {
+      return { success: false, error: 'Banco no reconocido automáticamente. Asegúrate de que el PDF sea un estado de cuenta original.' }
+    }
+
+    // 3. Extraer metadatos
+    const metaResult = extractAccountMeta(text, bankId)
+    const metas = Array.isArray(metaResult) ? metaResult : [metaResult]
+    
+    // 4. Obtener perfil
+    const profile = db.prepare('SELECT id FROM profiles LIMIT 1').get() as { id: string }
+    if (!profile) return { success: false, error: 'No hay perfil configurado.' }
+
+    const parsed = parsePdfContent(bankId, text)
+    console.log(`[Main] Transactions parsed: ${parsed.length}`)
+
+    if (parsed.length === 0 && metas.length === 0) {
+      return { success: false, error: `No se encontraron datos legibles para ${bankId}.` }
+    }
+
+    const insertAccountStmt = db.prepare(`
+      INSERT INTO accounts (user_id, name, bank, type, balance, currency, color, last_four)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id, type
+    `)
+
+    const insertTxStmt = db.prepare(`
+      INSERT OR IGNORE INTO transactions 
+      (user_id, account_id, date, amount, type, category, description, source, dedup_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    let inserted = 0
+    let duplicates = 0
+    const accountMap: Record<string, any> = {}
+
+    // Ejecutamos TODO dentro de una transacción atómica para SQLite
+    const transaction = db.transaction((txs) => {
+      // Procesar y crear cada subcuenta detectada
+      for (const meta of metas) {
+        let account = db.prepare(`
+          SELECT * FROM accounts 
+          WHERE user_id = ? AND bank = ? AND (last_four = ? OR name = ?)
+        `).get(profile.id, bankId, meta.lastFour, meta.accountName) as any
+
+        if (!account) {
+          console.log('[Main] Creating new account:', meta.accountName)
+          const color = bankId === 'Openbank' ? '#0066CC' : bankId === 'BBVA' ? '#004481' : bankId === 'Klar' ? '#00C4B3' : '#820AD1'
+          const result = insertAccountStmt.get(
+            profile.id, 
+            meta.accountName, 
+            bankId, 
+            meta.accountType, 
+            meta.finalBalance || 0, 
+            meta.currency,
+            color,
+            meta.lastFour
+          ) as { id: string, type: string }
+          account = { id: result.id, name: meta.accountName, type: meta.accountType }
+        }
+        
+        // Mapear por tipo de cuenta (debito, inversion, credito) para enlazar transacciones
+        accountMap[meta.accountType] = account
+        
+        // Actualizar balance
+        if (meta.finalBalance !== undefined) {
+          db.prepare('UPDATE accounts SET balance = ? WHERE id = ?').run(meta.finalBalance, account.id)
+        }
+      }
+
+      // Procesar transacciones
+      for (const tx of txs) {
+        // Para bancos multi-cuenta como Klar, tx.subAccount nos dice si va a debito o inversion
+        // Para bancos de cuenta única, usamos la primera cuenta creada
+        let targetAccount = accountMap[tx.subAccount || 'debito'] || Object.values(accountMap)[0]
+
+        if (!targetAccount) continue
+
+        const hash = generateTxHash(tx.date, tx.amount, tx.description)
+        const result = insertTxStmt.run(
+          profile.id,
+          targetAccount.id,
+          tx.date,
+          tx.amount,
+          tx.type,
+          inferCategory(tx.description, tx.type),
+          tx.description,
+          'pdf',
+          hash
+        )
+        if (result.changes > 0) inserted++
+        else duplicates++
+      }
+    })
+
+    // Lanzamos la transacción
+    transaction(parsed)
+
+    return {
+      success: true,
+      bank: bankId,
+      accountName: metas.map(m => m.accountName).join(' + '),
+      inserted,
+      duplicates
+    }
+  })
+
+  safeIpcHandle('show-open-dialog', async () => {
     const { dialog } = await import('electron')
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],

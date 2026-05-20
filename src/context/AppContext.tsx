@@ -1,9 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import type { AppState, Transaction, Account, SavingGoal, Budget, UserProfile, AlertSettings, Alert, Debt } from '../types'
-import { 
-  mockAccounts, mockTransactions, mockBudgets, mockGoals, mockDebts, 
-  mockProfile, mockAlertSettings, mockNetWorthHistory, mockAlerts 
-} from '../mockData'
+import type { AppState, Transaction, Account, SavingGoal, Budget, UserProfile, AlertSettings, Alert, Debt, NetWorthSnapshot } from '../types'
 import { useAuth } from './AuthContext'
 
 interface AppContextType extends AppState {
@@ -23,7 +19,27 @@ interface AppContextType extends AppState {
   markAlertRead: (id: string) => void
   markAllAlertsRead: () => void
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>
-  updateAlertSettings: (updates: Partial<AlertSettings>) => void
+  updateAlertSettings: (updates: Partial<AlertSettings>) => Promise<void>
+  refreshData: () => Promise<void>
+}
+
+const defaultProfile: UserProfile = {
+  name: '',
+  email: '',
+  currency: 'MXN',
+  theme: 'dark'
+}
+
+const defaultAlertSettings: AlertSettings = {
+  presupuestoAlerta: true,
+  presupuestoExcedido: true,
+  pagoProximo: true,
+  pagoVencido: true,
+  metaLograda: true,
+  saldoBajo: true,
+  gastoInusual: false,
+  rachaAhorro: true,
+  resumenSemanal: false
 }
 
 const AppContext = createContext<AppContextType | null>(null)
@@ -37,58 +53,80 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [goals, setGoals] = useState<SavingGoal[]>([])
   const [debts, setDebts] = useState<Debt[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
-  const [netWorthHistory] = useState(mockNetWorthHistory)
-  const [profile, setProfile] = useState(mockProfile)
-  const [alertSettings, setAlertSettings] = useState(mockAlertSettings)
+  const [netWorthHistory, setNetWorthHistory] = useState<NetWorthSnapshot[]>([])
+  const [profile, setProfile] = useState<UserProfile>(defaultProfile)
+  const [alertSettings, setAlertSettings] = useState<AlertSettings>(defaultAlertSettings)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (isElectron && user) {
-        console.log('[App] Loading user data from SQLite...')
-        const electron = (window as any).electronAPI
-        if (!electron) {
-          setLoading(false)
-          return
+  const refreshData = useCallback(async () => {
+    if (isElectron && user) {
+      console.log('[App] Loading user data from SQLite...')
+      const electron = (window as any).electronAPI
+      if (!electron) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        // Primero calcular el historial dinámico para asegurarnos de que esté sincronizado
+        await electron.invoke('calculate-net-worth-history', user.id)
+
+        const [dbAccounts, dbTransactions, dbGoals, dbDebts, dbAlerts, dbProfile, dbAlertSettings, dbNetWorth] = await Promise.all([
+          electron.invoke('get-accounts', user.id),
+          electron.invoke('get-transactions', user.id),
+          electron.invoke('get-goals', user.id),
+          electron.invoke('get-debts', user.id),
+          electron.invoke('get-alerts', user.id),
+          electron.invoke('get-profile'),
+          electron.invoke('get-alert-settings', user.id),
+          electron.invoke('get-net-worth-history', user.id),
+        ])
+
+        setAccounts(dbAccounts || [])
+        setTransactions(dbTransactions || [])
+        setGoals(dbGoals || [])
+        setDebts(dbDebts || [])
+        setAlerts(dbAlerts || [])
+        setNetWorthHistory(dbNetWorth || [])
+        if (dbProfile) {
+          setProfile(dbProfile)
+        } else {
+          setProfile(defaultProfile)
         }
-
-        try {
-          const [dbAccounts, dbTransactions, dbGoals, dbDebts, dbAlerts] = await Promise.all([
-            electron.invoke('get-accounts', user.id),
-            electron.invoke('get-transactions', user.id),
-            electron.invoke('get-goals', user.id),
-            electron.invoke('get-debts', user.id),
-            electron.invoke('get-alerts', user.id),
-          ])
-
-          setAccounts(dbAccounts || [])
-          setTransactions(dbTransactions || [])
-          setGoals(dbGoals || [])
-          setDebts(dbDebts || [])
-          setAlerts(dbAlerts || [])
-          
-          const currentMonth = new Date().toISOString().slice(0, 7)
-          const dbBudgets = await electron.invoke('get-budgets', user.id, currentMonth)
-          setBudgets(dbBudgets || [])
+        if (dbAlertSettings) {
+          setAlertSettings(dbAlertSettings)
+        } else {
+          setAlertSettings(defaultAlertSettings)
+        }
         
-        } catch (error) {
-          console.error('[App] Failed to load data:', error)
-        } finally {
-          setLoading(false)
-        }
-      } else {
-        console.log('[App] Mode: Mock/Empty (No user or not Electron)')
-        // Forzar limpieza si no hay usuario
-        setAccounts([])
-        setTransactions([])
-        setBudgets([])
-        setGoals([])
+        const currentMonth = new Date().toISOString().slice(0, 7)
+        const dbBudgets = await electron.invoke('get-budgets', user.id, currentMonth)
+        setBudgets(dbBudgets || [])
+      
+      } catch (error) {
+        console.error('[App] Failed to load data:', error)
+      } finally {
         setLoading(false)
       }
+    } else {
+      console.log('[App] Mode: Mock/Empty (No user or not Electron)')
+      setAccounts([])
+      setTransactions([])
+      setBudgets([])
+      setGoals([])
+      setDebts([])
+      setAlerts([])
+      setNetWorthHistory([])
+      setProfile(defaultProfile)
+      setAlertSettings(defaultAlertSettings)
+      setLoading(false)
     }
-
-    loadData()
   }, [isElectron, user])
+
+  useEffect(() => {
+    setLoading(true)
+    refreshData()
+  }, [refreshData])
 
   const addTransaction = useCallback(async (tx: Omit<Transaction, 'id'>) => {
     if (isElectron && user) {
@@ -192,19 +230,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProfile(prev => ({ ...prev, ...updates }))
   }, [isElectron, user])
 
-  const updateAlertSettings = useCallback((updates: Partial<AlertSettings>) => {
+  const updateAlertSettings = useCallback(async (updates: Partial<AlertSettings>) => {
+    if (isElectron && user) await (window as any).electronAPI.invoke('update-alert-settings', user.id, updates)
     setAlertSettings(prev => ({ ...prev, ...updates }))
-  }, [])
+  }, [isElectron, user])
 
   return (
     <AppContext.Provider value={{
       accounts, transactions, budgets, goals, debts, alerts,
-      net_worth_history: netWorthHistory, // Corrección de nombre si fuera necesario
       netWorthHistory, profile, alertSettings,
       addTransaction, deleteTransaction, addAccount, updateAccount, deleteAccount,
       addGoal, updateGoal, deleteGoal, addBudget, updateBudget, deleteBudget,
       addDebt, deleteDebt, markAlertRead, markAllAlertsRead,
-      updateProfile, updateAlertSettings,
+      updateProfile, updateAlertSettings, refreshData,
     }}>
       {children}
     </AppContext.Provider>

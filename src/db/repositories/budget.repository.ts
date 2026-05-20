@@ -21,9 +21,10 @@ export class BudgetRepository {
     const stmt = this.db.prepare(`
       INSERT INTO budgets (id, user_id, category, monthly_limit, period)
       VALUES (?, ?, ?, ?, ?)
+      RETURNING id
     `)
-    stmt.run(id, userId, budget.category, budget.monthlyLimit, budget.period)
-    return id || 'unknown'
+    const result = stmt.get(id, userId, budget.category, budget.monthlyLimit, budget.period) as { id: string }
+    return result.id
   }
 
   update(id: string, updates: Partial<Budget>): void {

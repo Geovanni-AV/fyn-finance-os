@@ -1,14 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { useApp } from '../../context/AppContext'
 import { Button } from '../../components/ui'
 import { formatMXN, BankName, BANKS, CATEGORY_BUDGET, CATEGORY_ICONS } from '../../types'
 
 export default function Onboarding() {
   const navigate = useNavigate()
-  const { updateProfile, addAccount } = useApp()
-  const { refreshProfile } = useAuth()
+  const { createProfile, refreshProfile } = useAuth()
   const [step, setStep] = useState(1)
   const [name, setName] = useState('')
   const [selectedBank, setSelectedBank] = useState<BankName | null>(null)
@@ -17,20 +15,24 @@ export default function Onboarding() {
 
   const handleComplete = async () => {
     if (name) {
-      await updateProfile({ name, onboardingDone: true })
+      // 1. Crear el perfil inicial en SQLite
+      const userId = await createProfile({ name, onboardingDone: true })
       
-      // Si seleccionó banco y saldo inicial, creamos la primera cuenta
-      if (selectedBank && balance) {
+      // 2. Si seleccionó banco y saldo inicial, creamos la primera cuenta real
+      if (userId && selectedBank && balance) {
         const bankData = BANKS.find(b => b.name === selectedBank)
-        await addAccount({
-          name: `Cuenta ${selectedBank}`,
-          bank: selectedBank,
-          type: 'debito',
-          balance: parseFloat(balance),
-          currency: 'MXN',
-          color: bankData?.color || '#2563EB',
-          isActive: true
-        })
+        const electron = (window as any).electronAPI
+        if (electron) {
+          await electron.invoke('add-account', userId, {
+            name: `Cuenta ${selectedBank}`,
+            bank: selectedBank,
+            type: 'debito',
+            balance: parseFloat(balance),
+            currency: 'MXN',
+            color: bankData?.color || '#2563EB',
+            isActive: true
+          })
+        }
       }
     }
     

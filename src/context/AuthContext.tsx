@@ -7,6 +7,7 @@ interface AuthContextType {
   signOut: () => Promise<void>
   isElectron: boolean
   refreshProfile: () => Promise<void>
+  createProfile: (profile: { name: string; email?: string; currency?: string; theme?: string; onboardingDone?: boolean }) => Promise<string>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -34,6 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: profile.id,
             email: profile.email,
             user_metadata: { name: profile.name },
+            currency: profile.currency,
+            theme: profile.theme,
+            onboardingDone: profile.onboardingDone
           }
           setUser(mockUser as any)
           setSession({ user: mockUser } as any)
@@ -52,6 +56,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const createProfile = async (profileData: { name: string; email?: string; currency?: string; theme?: string; onboardingDone?: boolean }) => {
+    if (isElectron) {
+      try {
+        console.log('[Auth] Creating profile...', profileData)
+        const electron = (window as any).electronAPI
+        if (electron) {
+          const id = await electron.invoke('create-profile', profileData)
+          await refreshProfile()
+          return id
+        }
+      } catch (err) {
+        console.error('[Auth] Error creating profile:', err)
+      }
+    }
+    return ''
+  }
+
   useEffect(() => {
     refreshProfile()
   }, [])
@@ -65,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, loading, signOut, isElectron, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, loading, signOut, isElectron, refreshProfile, createProfile }}>
       {children}
     </AuthContext.Provider>
   )
