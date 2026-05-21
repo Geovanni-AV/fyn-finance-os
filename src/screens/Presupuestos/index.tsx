@@ -6,10 +6,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { useToast } from '../../context/ToastContext'
 
 export default function Presupuestos() {
-  const { budgets, transactions, addBudget, updateBudget, deleteBudget, refreshData } = useApp()
+  const { budgets, transactions, addBudget, updateBudget, deleteBudget, refreshData, selectedPeriod, setSelectedPeriod, availableMonths } = useApp()
   const { success, error: toastError } = useToast()
 
-  const currentPeriod = useMemo(() => new Date().toISOString().slice(0, 7), [])
+  const currentPeriod = selectedPeriod
 
   const { totalLimit, totalSpent } = useMemo(() => {
     return budgets.reduce((acc, b) => ({
@@ -23,8 +23,19 @@ export default function Presupuestos() {
 
   // Simple linear projection (assuming constant spending speed)
   const today = new Date()
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-  const currentDay = today.getDate()
+  const currentRealMonth = today.toISOString().slice(0, 7)
+  let daysInMonth: number
+  let currentDay: number
+
+  if (selectedPeriod === currentRealMonth) {
+    daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+    currentDay = today.getDate()
+  } else {
+    const [year, month] = selectedPeriod.split('-').map(Number)
+    daysInMonth = new Date(year, month, 0).getDate()
+    currentDay = daysInMonth
+  }
+
   const projectedSpent = currentDay > 0 ? (totalSpent / currentDay) * daysInMonth : totalSpent
 
   // --- MODAL DETALLE DE CATEGORÍA ---
@@ -167,10 +178,10 @@ export default function Presupuestos() {
     if (!selectedBudget) return []
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
     const history = []
+    const [year, month] = selectedPeriod.split('-').map(Number)
     
     for (let i = 2; i >= 0; i--) {
-      const d = new Date()
-      d.setMonth(today.getMonth() - i)
+      const d = new Date(year, month - 1 - i, 1)
       const mStr = d.toISOString().slice(0, 7)
       const monthLabel = monthNames[d.getMonth()]
       
@@ -183,7 +194,7 @@ export default function Presupuestos() {
       history.push({ month: monthLabel, spent, status })
     }
     return history
-  }, [selectedBudget, transactions, today])
+  }, [selectedBudget, transactions, selectedPeriod])
 
   // --- GASTOS HORMIGA ---
   const [hormigaThreshold, setHormigaThreshold] = useState(200)
@@ -191,17 +202,17 @@ export default function Presupuestos() {
   
   const hormigaData = useMemo(() => {
     const todayStr = today.toISOString().split('T')[0]
-    const currentMonthPrefix = todayStr.substring(0, 7)
-    
     const allHormiga = transactions.filter(t => t.type === 'gasto' && t.amount <= hormigaThreshold)
-    const todayHormiga = allHormiga.filter(t => t.date === todayStr)
-    const monthHormiga = allHormiga.filter(t => t.date.startsWith(currentMonthPrefix))
     
+    const isCurrentMonth = selectedPeriod === currentRealMonth
+    const todayHormiga = isCurrentMonth ? allHormiga.filter(t => t.date === todayStr) : []
     const todayTotal = todayHormiga.reduce((acc, t) => acc + t.amount, 0)
+    
+    const monthHormiga = allHormiga.filter(t => t.date.startsWith(selectedPeriod))
     const monthTotal = monthHormiga.reduce((acc, t) => acc + t.amount, 0)
     
     return { todayHormiga, todayTotal, monthTotal, monthLimit: hormigaDailyLimit * currentDay }
-  }, [transactions, hormigaThreshold, hormigaDailyLimit, currentDay, today])
+  }, [transactions, hormigaThreshold, hormigaDailyLimit, currentDay, today, selectedPeriod, currentRealMonth])
 
   return (
     <div className="space-y-12 animate-fade-in pb-12">
@@ -214,7 +225,29 @@ export default function Presupuestos() {
             <span className="text-primary/40">Presupuestos.</span>
           </h1>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4 items-center">
+          {/* Period Selector */}
+          <div className="relative inline-block">
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="appearance-none bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-light-text dark:text-dark-text py-3 px-6 pr-12 rounded-full text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-primary hover:border-primary/40 transition-all cursor-pointer select-none"
+            >
+              {availableMonths.map((m) => {
+                const [year, month] = m.split('-')
+                const dateObj = new Date(parseInt(year), parseInt(month) - 1, 1)
+                const label = dateObj.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+                return (
+                  <option key={m} value={m} className="bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text uppercase font-semibold text-xs tracking-wider">
+                    {label}
+                  </option>
+                )
+              })}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-light-text-2 dark:text-dark-text-2">
+              <span className="material-symbols-outlined text-sm font-light">keyboard_arrow_down</span>
+            </div>
+          </div>
           <Button onClick={() => setIsAddOpen(true)} className="!rounded-full !px-8 shadow-luster">
             <span className="material-symbols-outlined text-lg mr-1">add</span>
             Nuevo Límite

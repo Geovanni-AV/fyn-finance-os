@@ -3,10 +3,10 @@ import { useApp } from '../context/AppContext'
 import type { Transaction, Budget } from '../types'
 
 export function useDashboardKPIs() {
-  const { transactions, accounts, budgets } = useApp()
+  const { transactions, accounts, budgets, selectedPeriod } = useApp()
 
   return useMemo(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7)
+    const currentMonth = selectedPeriod
     const monthTx = transactions.filter(t => t.date.startsWith(currentMonth))
 
     const ingresos = monthTx.filter(t => t.type === 'ingreso').reduce((s, t) => s + t.amount, 0)
@@ -18,26 +18,51 @@ export function useDashboardKPIs() {
     const porcentajeGastado = presupuestoTotal > 0 ? gastos / presupuestoTotal : 0
 
     const today = new Date()
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-    const dayOfMonth = today.getDate()
+    const currentRealMonth = today.toISOString().slice(0, 7)
+    
+    let daysInMonth: number
+    let dayOfMonth: number
+    
+    if (selectedPeriod === currentRealMonth) {
+      daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+      dayOfMonth = today.getDate()
+    } else {
+      const [year, month] = selectedPeriod.split('-').map(Number)
+      daysInMonth = new Date(year, month, 0).getDate()
+      dayOfMonth = daysInMonth
+    }
+    
     const gastosProyectados = dayOfMonth > 0 ? (gastos / dayOfMonth) * daysInMonth : 0
 
     return { ingresos, gastos, ahorro, tasaAhorro, totalBalance, porcentajeGastado, gastosProyectados, presupuestoTotal }
-  }, [transactions, accounts, budgets])
+  }, [transactions, accounts, budgets, selectedPeriod])
 }
 
 export function useBudgetStatus(budget: Budget) {
+  const { selectedPeriod } = useApp()
   return useMemo(() => {
     const pct = budget.monthlyLimit > 0 ? budget.spent / budget.monthlyLimit : 0
     const today = new Date()
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-    const dayOfMonth = today.getDate()
+    const currentRealMonth = today.toISOString().slice(0, 7)
+    
+    let daysInMonth: number
+    let dayOfMonth: number
+    
+    if (selectedPeriod === currentRealMonth) {
+      daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+      dayOfMonth = today.getDate()
+    } else {
+      const [year, month] = selectedPeriod.split('-').map(Number)
+      daysInMonth = new Date(year, month, 0).getDate()
+      dayOfMonth = daysInMonth
+    }
+    
     const projected = dayOfMonth > 0 ? (budget.spent / dayOfMonth) * daysInMonth : budget.spent
     const projectedPct = budget.monthlyLimit > 0 ? projected / budget.monthlyLimit : 0
 
     const status = pct < 0.70 ? 'ok' : pct < 0.90 ? 'warning' : 'danger'
     return { pct, projected, projectedPct, status }
-  }, [budget])
+  }, [budget, selectedPeriod])
 }
 
 export function useNetWorth() {
@@ -58,11 +83,10 @@ export function useRecentTransactions(limit = 5) {
 }
 
 export function useMonthTransactions() {
-  const { transactions } = useApp()
-  const currentMonth = new Date().toISOString().slice(0, 7)
+  const { transactions, selectedPeriod } = useApp()
   return useMemo(() =>
-    transactions.filter(t => t.date.startsWith(currentMonth)),
-    [transactions, currentMonth]
+    transactions.filter(t => t.date.startsWith(selectedPeriod)),
+    [transactions, selectedPeriod]
   )
 }
 

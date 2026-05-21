@@ -27,7 +27,7 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 export default function Dashboard() {
-  const { accounts, budgets, goals, netWorthHistory, profile, refreshData } = useApp()
+  const { accounts, budgets, goals, netWorthHistory, profile, refreshData, selectedPeriod, setSelectedPeriod, availableMonths } = useApp()
   const kpis = useDashboardKPIs()
   const recent = useRecentTransactions(6)
   const [aiBannerOpen, setAiBannerOpen] = useState(true)
@@ -50,11 +50,25 @@ export default function Dashboard() {
     if (!netWorthHistory || netWorthHistory.length === 0) {
       return [{ month: 'Actual', netWorth: kpis.totalBalance }]
     }
-    return netWorthHistory.slice(-6).map(n => ({
+    
+    // Buscar la posición del período seleccionado en el historial
+    const selectedIdx = netWorthHistory.findIndex(n => n.month === selectedPeriod)
+    
+    let subset = netWorthHistory
+    if (selectedIdx !== -1) {
+      // Tomar hasta 6 meses terminando en el seleccionado
+      const start = Math.max(0, selectedIdx - 5)
+      subset = netWorthHistory.slice(start, selectedIdx + 1)
+    } else {
+      // Si por alguna razón no se encuentra, tomamos los últimos 6
+      subset = netWorthHistory.slice(-6)
+    }
+    
+    return subset.map(n => ({
       month: n.month.slice(5),
       netWorth: n.netWorth,
     }))
-  }, [netWorthHistory, kpis.totalBalance])
+  }, [netWorthHistory, selectedPeriod, kpis.totalBalance])
 
   const hasAccounts = accounts.length > 0
 
@@ -73,9 +87,33 @@ export default function Dashboard() {
             <span className="text-primary/40">{(profile?.name || 'Usuario').split(' ')[0]}.</span>
           </h1>
         </div>
-        <div className="flex flex-col items-start md:items-end gap-2">
-          <p className="text-sm font-semibold text-atelier-text-muted-light dark:text-atelier-text-muted-dark italic opacity-60 uppercase tracking-widest leading-none">{today}</p>
-          <div className="h-px w-12 bg-primary/20 mt-2" />
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+          {/* Period Selector */}
+          <div className="relative inline-block">
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="appearance-none bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-light-text dark:text-dark-text py-3 px-6 pr-12 rounded-full text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-primary hover:border-primary/40 transition-all cursor-pointer select-none"
+            >
+              {availableMonths.map((m) => {
+                const [year, month] = m.split('-')
+                const dateObj = new Date(parseInt(year), parseInt(month) - 1, 1)
+                const label = dateObj.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+                return (
+                  <option key={m} value={m} className="bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text uppercase font-semibold text-xs tracking-wider">
+                    {label}
+                  </option>
+                )
+              })}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-light-text-2 dark:text-dark-text-2">
+              <span className="material-symbols-outlined text-sm font-light">keyboard_arrow_down</span>
+            </div>
+          </div>
+          <div className="flex flex-col items-start md:items-end gap-2">
+            <p className="text-sm font-semibold text-atelier-text-muted-light dark:text-atelier-text-muted-dark italic opacity-60 uppercase tracking-widest leading-none">{today}</p>
+            <div className="h-px w-12 bg-primary/20 mt-2" />
+          </div>
         </div>
       </div>
 

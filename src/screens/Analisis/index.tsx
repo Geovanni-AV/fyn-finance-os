@@ -8,7 +8,7 @@ import { Card, Button, Drawer, ChipSelector, Badge, Skeleton } from '../../compo
 import { formatMXN, formatMXNShort, CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, type CategoryId } from '../../types'
 
 export default function Analisis() {
-  const { transactions, accounts } = useApp()
+  const { transactions, accounts, selectedPeriod, setSelectedPeriod, availableMonths } = useApp()
   const [isExportOpen, setIsExportOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | 'csv'>('pdf')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -21,12 +21,12 @@ export default function Analisis() {
 
   // Statistical calculations using real SQLite data
   const analysisData = useMemo(() => {
-    const now = new Date()
-    const thisMonthStr = now.toISOString().slice(0, 7)
+    const thisMonthStr = selectedPeriod
     
-    const lastMonthDate = new Date()
-    lastMonthDate.setMonth(now.getMonth() - 1)
-    const lastMonthStr = lastMonthDate.toISOString().slice(0, 7)
+    // Calcular el mes anterior relativo a selectedPeriod
+    const [year, month] = selectedPeriod.split('-').map(Number)
+    const prevDate = new Date(year, month - 2, 1)
+    const lastMonthStr = prevDate.toISOString().slice(0, 7)
     
     const expensesThisMonth = transactions.filter(t => t.type === 'gasto' && t.date.startsWith(thisMonthStr))
     const expensesLastMonth = transactions.filter(t => t.type === 'gasto' && t.date.startsWith(lastMonthStr))
@@ -53,13 +53,12 @@ export default function Analisis() {
     const totalIncomesThis = incomesThisMonth.reduce((sum, t) => sum + t.amount, 0)
     const savingPotential = Math.max(0, totalIncomesThis - totalThis)
 
-    // Calculate real monthly trend data for the last 6 months from SQLite transactions
+    // Calculate real monthly trend data for the last 6 months from SQLite transactions relative to selectedPeriod
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
     const trendData = []
     
     for (let i = 5; i >= 0; i--) {
-      const d = new Date()
-      d.setMonth(now.getMonth() - i)
+      const d = new Date(year, month - 1 - i, 1)
       const mStr = d.toISOString().slice(0, 7)
       const monthLabel = monthNames[d.getMonth()]
       
@@ -75,7 +74,7 @@ export default function Analisis() {
     }
 
     return { totalThis, totalLast, catData, trendData, totalBalance, savingPotential }
-  }, [transactions, accounts])
+  }, [transactions, accounts, selectedPeriod])
 
   const isTrendEmpty = useMemo(() => {
     return analysisData.trendData.every(d => d.ingresos === 0 && d.gastos === 0)
@@ -126,11 +125,29 @@ export default function Analisis() {
             <span className="text-primary/40 text-[0.8em]">Tendencias.</span>
           </h1>
         </div>
-        <div className="flex gap-4">
-          <Button variant="secondary" size="lg" className="!rounded-full !px-8">
-             <span className="material-symbols-outlined text-lg">filter_list</span>
-             Filtros
-          </Button>
+        <div className="flex flex-wrap gap-4 items-center">
+          {/* Period Selector */}
+          <div className="relative inline-block">
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="appearance-none bg-light-card dark:bg-dark-card border border-light-border dark:border-dark-border text-light-text dark:text-dark-text py-3 px-6 pr-12 rounded-full text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-primary hover:border-primary/40 transition-all cursor-pointer select-none"
+            >
+              {availableMonths.map((m) => {
+                const [year, month] = m.split('-')
+                const dateObj = new Date(parseInt(year), parseInt(month) - 1, 1)
+                const label = dateObj.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
+                return (
+                  <option key={m} value={m} className="bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text uppercase font-semibold text-xs tracking-wider">
+                    {label}
+                  </option>
+                )
+              })}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-light-text-2 dark:text-dark-text-2">
+              <span className="material-symbols-outlined text-sm font-light">keyboard_arrow_down</span>
+            </div>
+          </div>
           <Button onClick={() => setIsExportOpen(true)} size="lg" className="!rounded-full !px-8 shadow-luster">
              <span className="material-symbols-outlined text-lg">ios_share</span>
              Exportar

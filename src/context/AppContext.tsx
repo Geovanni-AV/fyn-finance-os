@@ -1,8 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import type { AppState, Transaction, Account, SavingGoal, Budget, UserProfile, AlertSettings, Alert, Debt, NetWorthSnapshot } from '../types'
 import { useAuth } from './AuthContext'
 
 interface AppContextType extends AppState {
+  selectedPeriod: string
+  setSelectedPeriod: (period: string) => void
+  availableMonths: string[]
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<void>
   deleteTransaction: (id: string) => Promise<void>
   addAccount: (acc: Omit<Account, 'id'>) => Promise<void>
@@ -58,6 +61,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [alertSettings, setAlertSettings] = useState<AlertSettings>(defaultAlertSettings)
   const [loading, setLoading] = useState(true)
 
+  const [selectedPeriod, setSelectedPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7))
+
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set<string>()
+    // Siempre incluir el mes actual
+    monthsSet.add(new Date().toISOString().slice(0, 7))
+    // Incluir todos los meses de transacciones existentes
+    transactions.forEach(tx => {
+      if (tx.date && tx.date.length >= 7) {
+        monthsSet.add(tx.date.substring(0, 7))
+      }
+    })
+    return Array.from(monthsSet).sort((a, b) => b.localeCompare(a))
+  }, [transactions])
+
   const refreshData = useCallback(async () => {
     if (isElectron && user) {
       console.log('[App] Loading user data from SQLite...')
@@ -99,8 +117,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setAlertSettings(defaultAlertSettings)
         }
         
-        const currentMonth = new Date().toISOString().slice(0, 7)
-        const dbBudgets = await electron.invoke('get-budgets', user.id, currentMonth)
+        const dbBudgets = await electron.invoke('get-budgets', user.id, selectedPeriod)
         setBudgets(dbBudgets || [])
       
       } catch (error) {
@@ -121,7 +138,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAlertSettings(defaultAlertSettings)
       setLoading(false)
     }
-  }, [isElectron, user])
+  }, [isElectron, user, selectedPeriod])
 
   useEffect(() => {
     setLoading(true)
@@ -239,6 +256,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       accounts, transactions, budgets, goals, debts, alerts,
       netWorthHistory, profile, alertSettings,
+      selectedPeriod, setSelectedPeriod, availableMonths,
       addTransaction, deleteTransaction, addAccount, updateAccount, deleteAccount,
       addGoal, updateGoal, deleteGoal, addBudget, updateBudget, deleteBudget,
       addDebt, deleteDebt, markAlertRead, markAllAlertsRead,
